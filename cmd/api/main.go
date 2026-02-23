@@ -2,8 +2,7 @@ package main
 
 import (
 	"mk-pos-billing/internal/api/routes"
-	"mk-pos-billing/internal/infrastructure/config"
-	"mk-pos-billing/internal/infrastructure/database"
+	bootstrap "mk-pos-billing/internal/container"
 	"mk-pos-billing/internal/infrastructure/logger"
 	"os"
 	"time"
@@ -16,7 +15,7 @@ import (
 )
 
 func main() {
-	// Set default timezone globally (Asia/Kolkata)
+	// ✅ Set default timezone globally (Asia/Kolkata)
 	loc, _ := time.LoadLocation("Asia/Kolkata")
 	time.Local = loc
 
@@ -36,20 +35,29 @@ func main() {
 	// Redirect Gin logs to Zap
 	gin.DefaultWriter = zap.NewStdLog(zap.L()).Writer()
 
-	// Run web server
+	// Register commands
+	// cmd.RootCmd.AddCommand(corecmd.GetCoreTestTaskCmd())
+	// cmd.RootCmd.AddCommand(commands.GetWorkerCmd())
+	// cmd.RootCmd.AddCommand(db_seeding.GetSeedCmd())
+	// cmd.RootCmd.AddCommand(commands.GetRetryJobCmd())
+
+	// If CLI arguments provided, run CLI
+	// if len(os.Args) > 1 && os.Args[1] != "." {
+	// 	zap.L().Info("Running CLI Command")
+	// 	cmd.Execute()
+	// 	return
+	// }
+
+	// Otherwise, run as web server
 	runServer()
 }
 
 func runServer() {
-	// Initialize infrastructure
-	dbCfg := config.LoadDatabaseConfig()
-	db, err := database.ProvideDB(dbCfg)
+	// ✅ Let Wire handle full DI including DB
+	app, err := bootstrap.InitializeServerApp()
 	if err != nil {
-		zap.L().Fatal("Failed to initialize database", zap.Error(err))
+		zap.L().Fatal("Failed to initialize app", zap.Error(err))
 	}
-
-	redisCfg := config.LoadRedisConfig()
-	redisClient := database.ProvideRedisClient(redisCfg)
 
 	// Gin setup
 	r := gin.New()
@@ -70,16 +78,19 @@ func runServer() {
 		AllowCredentials: true,
 	}))
 
-	// Log HTTP requests to console only in development
+	// ✅ Log HTTP requests to console only in development
 	if logger.ConsoleLoggingEnabled() {
 		r.Use(gin.LoggerWithWriter(zap.NewStdLog(zap.L()).Writer()))
 	}
 
-	// Recover from panics, log stack traces
+	// ✅ Recover from panics, log stack traces
 	r.Use(gin.RecoveryWithWriter(logger.Writer{}))
 
 	// Register API routes
-	routes.RegisterAllRoutes(r, db, redisClient)
+	routes.RegisterAllRoutes(r, routes.RouteConfig{
+		SalesInvoiceHandler:        app.SalesInvoiceHandler,
+		DuplicateRequestMiddleware: app.DuplicateRequestMiddleware,
+	})
 
 	port := os.Getenv("PORT")
 	zap.L().Info("Starting web server", zap.String("port", port), zap.String("env", os.Getenv("APP_ENV")))

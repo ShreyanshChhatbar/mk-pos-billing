@@ -2,21 +2,17 @@ package routes
 
 import (
 	"mk-pos-billing/internal/api/handlers"
-	"mk-pos-billing/internal/infrastructure/database"
+	"mk-pos-billing/internal/api/middleware"
 
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 )
 
-func RegisterAllRoutes(r *gin.Engine, db *database.DB, redisClient *redis.Client) {
-	// Health check
+type RouteConfig struct {
+	SalesInvoiceHandler        *handlers.SalesInvoiceHandler
+	DuplicateRequestMiddleware *middleware.DuplicateRequestMiddleware
+}
+
+func RegisterAllRoutes(r *gin.Engine, cfg RouteConfig) {
 	r.GET("/health", handlers.HealthCheck)
-
-	// Public routes
-	// Add your application routes here
-
-	// Protected routes
-	// protected := r.Group("/api/v1")
-	// protected.Use(authMW.Authenticate())
-	// protected.GET("/protected", handlers.SomeProtectedHandler)
+	SalesInvoiceRoutes(r, cfg.SalesInvoiceHandler, cfg.DuplicateRequestMiddleware)
 }

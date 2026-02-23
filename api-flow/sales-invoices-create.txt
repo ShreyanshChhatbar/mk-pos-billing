@@ -1,0 +1,34 @@
+API: POST /api/v1/sales-invoices/create
+
+Flow
+1. Validate request body (basic required fields, item/payment shapes).
+2. Start DB transaction.
+3. Load existing draft when `id` is present, otherwise create a new draft object.
+4. Load batch metadata (`batches`) and stock rows (`store_inventories` + `store_batches`) for requested item batches.
+5. Build draft lines:
+   - Use provided `sales_rate` when present, else fallback to batch `mrp`.
+   - Validate available stock against requested quantity.
+   - Compute item bill amount, total amount, discount amount/percentage.
+6. Compute invoice-level draft totals:
+   - total_bill_amount, total_amount, total_discount, total_invoice_amount (rounded), round_off.
+7. Replace draft payments (`sales_invoice_draft_payments`) and compute total_amount_received.
+8. Save draft (`sales_invoice_draft_jsons`) with summary columns + `draft_json` products payload.
+9. If `is_confirmed=false`, return draft details.
+10. If `is_confirmed=true`:
+   - Validate paid amount matches total invoice amount.
+   - Create final invoice row in `sales_invoices`.
+   - Create `sales_invoice_details` from fulfilled batches.
+   - Reduce inventory stock in `store_inventories`.
+   - Copy draft payments into `sales_invoice_payments`.
+   - Mark draft status as `INVOICED`.
+11. Commit transaction and return response.
+
+Tables used
+- sales_invoice_draft_jsons
+- sales_invoice_draft_payments
+- sales_invoices
+- sales_invoice_details
+- sales_invoice_payments
+- store_inventories
+- store_batches
+- batches
