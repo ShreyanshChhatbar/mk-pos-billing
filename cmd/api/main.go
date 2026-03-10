@@ -88,8 +88,10 @@ func runServer() {
 
 	// Register API routes
 	routes.RegisterAllRoutes(r, routes.RouteConfig{
-		SalesInvoiceHandler:        app.SalesInvoiceHandler,
-		DuplicateRequestMiddleware: app.DuplicateRequestMiddleware,
+		SalesInvoiceHandler:            app.SalesInvoiceHandler,
+		DuplicateRequestMiddleware:     app.DuplicateRequestMiddleware,
+		// SPOSCheckPermissionsMiddleware: app.SPOSCheckPermissionsMiddleware,
+		CacheTestHandler:               app.CacheTestHandler,
 	})
 
 	port := os.Getenv("PORT")

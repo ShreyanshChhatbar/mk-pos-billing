@@ -19,16 +19,27 @@ func InitializeServerApp() (*ServerApp, error) {
 
 	redisCfg := config.LoadRedisConfig()
 	redisClient := database.ProvideRedisClient(redisCfg)
-	cacheService := cache.NewCacheService(redisClient, "pos")
+	cacheCfg := config.LoadCacheConfig()
+	cacheService := cache.NewCacheService(redisClient, redisCfg.Prefix+cacheCfg.Prefix)
 	salesCfg := config.LoadSalesInvoiceConfig()
 
 	salesInvoiceRepo := repository.NewSalesInvoiceRepository(db)
 	salesInvoiceService := service.NewSalesInvoiceService(salesInvoiceRepo, cacheService, salesCfg)
 	salesInvoiceHandler := handlers.NewSalesInvoiceHandler(salesInvoiceService, salesCfg)
 	duplicateRequestMiddleware := middleware.NewDuplicateRequestMiddleware(cacheService, salesCfg)
+	
+	cachePrefixesCfg := cacheCfg.Prefixes
+	cacheTagsCfg := cacheCfg.Tags
+	cacheExpiryCfg := cacheCfg.Expiry
+	cacheMasterService := service.NewCacheMasterService(cacheService, cachePrefixesCfg, cacheTagsCfg, cacheExpiryCfg)
+	// sposCheckPermissionsMiddleware := middleware.NewSPOSCheckPermissionsMiddleware(cacheMasterService)
+	cacheTestHandler := handlers.NewCacheTestHandler(cacheMasterService)
 
 	return &ServerApp{
-		SalesInvoiceHandler:        salesInvoiceHandler,
-		DuplicateRequestMiddleware: duplicateRequestMiddleware,
+		SalesInvoiceHandler:            salesInvoiceHandler,
+		DuplicateRequestMiddleware:     duplicateRequestMiddleware,
+		CacheMasterService:             cacheMasterService,
+		// SPOSCheckPermissionsMiddleware: sposCheckPermissionsMiddleware,
+		CacheTestHandler:               cacheTestHandler,
 	}, nil
 }

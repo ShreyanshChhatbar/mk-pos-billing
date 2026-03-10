@@ -3,9 +3,11 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/elliotchance/phpserialize"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -22,7 +24,7 @@ func NewCacheService(client *redis.Client, namespace string) *Service {
 // BuildKey constructs a namespaced cache key: namespace:part1:part2...
 func (s *Service) BuildKey(parts ...string) string {
 	all := append([]string{s.namespace}, parts...)
-	return strings.Join(all, ":")
+	return strings.Join(all, "")
 }
 
 func (s *Service) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
@@ -50,7 +52,49 @@ func (s *Service) SetJSON(ctx context.Context, key string, value interface{}, tt
 func (s *Service) GetJSON(ctx context.Context, key string, dest interface{}) error {
 	data, err := s.client.Get(ctx, key).Bytes()
 	if err != nil {
+		fmt.Println("Redis Error: ", err)
 		return err
 	}
+
+	// First try to parse as PHP serialized data since Laravel uses this
+	phpDest := make(map[interface{}]interface{})
+	if err := phpserialize.Unmarshal(data, &phpDest); err == nil {
+		// Convert the map[interface{}]interface{} to map[string]interface{}
+		// JSON cannot encode map[interface{}]interface{} natively
+		stringMap := convertToStringMap(phpDest)
+		
+		// Re-encode to JSON so we can unmarshal it into the user's strongly typed struct
+		jsonData, err := json.Marshal(stringMap)
+		
+		if err == nil {
+			return json.Unmarshal(jsonData, dest)
+		}
+	}
+
+	// Fallback to standard JSON parsing if it's not a PHP serialized string
 	return json.Unmarshal(data, dest)
+}
+
+// convertToStringMap recursively converts map[interface{}]interface{} to map[string]interface{}
+// This is necessary because the JSON marshaler complains about map[interface{}] keys
+func convertToStringMap(m map[interface{}]interface{}) map[string]interface{} {
+	res := make(map[string]interface{})
+	for k, v := range m {
+		keyStr := fmt.Sprintf("%v", k)
+		
+		switch val := v.(type) {
+		case map[interface{}]interface{}:
+			res[keyStr] = convertToStringMap(val)
+		case []interface{}:
+			for i, elem := range val {
+				if mElem, ok := elem.(map[interface{}]interface{}); ok {
+					val[i] = convertToStringMap(mElem)
+				}
+			}
+			res[keyStr] = val
+		default:
+			res[keyStr] = v
+		}
+	}
+	return res
 }
