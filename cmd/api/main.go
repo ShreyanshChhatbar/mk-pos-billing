@@ -79,9 +79,9 @@ func runServer() {
 	}))
 
 	// ✅ Log HTTP requests to console only in development
-	if logger.ConsoleLoggingEnabled() {
-		r.Use(gin.LoggerWithWriter(zap.NewStdLog(zap.L()).Writer()))
-	}
+	// if logger.ConsoleLoggingEnabled() {
+	// 	r.Use(gin.LoggerWithWriter(zap.NewStdLog(zap.L()).Writer()))
+	// }
 
 	// ✅ Recover from panics, log stack traces
 	r.Use(gin.RecoveryWithWriter(logger.Writer{}))

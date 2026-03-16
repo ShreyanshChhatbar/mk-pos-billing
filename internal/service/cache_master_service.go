@@ -40,7 +40,8 @@ func NewCacheMasterService(cacheSvc *cache.Service, prefixes config.CachePrefixe
 func (s *cacheMasterService) GetTillCache(ctx context.Context, storeID int, dbFallback bool) (map[string]interface{}, error) {
 	// The Laravel code uses cache tags, which go-redis handles differently (often via sets), 
 	// but mapping to a simple string key approach is standard in basic Redis structures.
-	cacheKey := s.cacheSvc.BuildKey(s.prefixes.Till, fmt.Sprint(storeID))	
+	// Use BuildTaggedKey to handle Laravel's cache tagging (prepending the version hash)
+	cacheKey := s.cacheSvc.BuildTaggedKey(ctx, s.tags.Till, s.prefixes.Till, fmt.Sprint(storeID))	
 	
 	var tillData map[string]interface{}
 	err := s.cacheSvc.GetJSON(ctx, cacheKey, &tillData)
@@ -117,8 +118,9 @@ func (s *cacheMasterService) GetStoreCache(ctx context.Context, storeID int, dbF
 		return nil, nil // Equivalant to Laravel return null
 	}
 	
-	cacheKey := s.cacheSvc.BuildKey(s.prefixes.Store, fmt.Sprint(storeID))
-	
+	// Use BuildTaggedKey to handle Laravel's cache tagging (prepending the version hash)
+	cacheKey := s.cacheSvc.BuildTaggedKey(ctx, s.tags.Store, s.prefixes.Store, fmt.Sprint(storeID))
+
 	var storeData map[string]interface{}
 	err := s.cacheSvc.GetJSON(ctx, cacheKey, &storeData)
 	
@@ -202,7 +204,8 @@ func (s *cacheMasterService) GetDeviceCache(ctx context.Context, deviceToken str
 
 // GetProductCache mimics the Laravel getProductCache function
 func (s *cacheMasterService) GetProductCache(ctx context.Context, productID int) (map[string]interface{}, error) {
-	cacheKey := s.cacheSvc.BuildKey(s.prefixes.Product, fmt.Sprint(productID))
+	// Use BuildTaggedKey to handle Laravel's cache tagging (prepending the version hash)
+	cacheKey := s.cacheSvc.BuildTaggedKey(ctx, s.tags.Product, s.prefixes.Product, fmt.Sprint(productID))
 	
 	var productData map[string]interface{}
 	err := s.cacheSvc.GetJSON(ctx, cacheKey, &productData)

@@ -10,7 +10,7 @@ import (
 type RouteConfig struct {
 	SalesInvoiceHandler            *handlers.SalesInvoiceHandler
 	DuplicateRequestMiddleware     *middleware.DuplicateRequestMiddleware
-	// SPOSCheckPermissionsMiddleware *middleware.SPOSCheckPermissionsMiddleware
+	SPOSCheckPermissionsMiddleware *middleware.SPOSCheckPermissionsMiddleware
 	CacheTestHandler               *handlers.CacheTestHandler
 }
 
@@ -18,5 +18,5 @@ func RegisterAllRoutes(r *gin.Engine, cfg RouteConfig) {
 	r.GET("/health", handlers.HealthCheck)
 
 	TestRoutes(r, cfg.CacheTestHandler)
-	SalesInvoiceRoutes(r, cfg.SalesInvoiceHandler, cfg.DuplicateRequestMiddleware, cfg.SPOSCheckPermissionsMiddleware)
+	SalesInvoiceRoutes(r, cfg.SalesInvoiceHandler, cfg.DuplicateRequestMiddleware)
 }

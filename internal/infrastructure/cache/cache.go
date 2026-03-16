@@ -27,6 +27,42 @@ func (s *Service) BuildKey(parts ...string) string {
 	return strings.Join(all, "")
 }
 
+// GetTagVersion attempts to find the current version hash for a given tag.
+// It first looks for a key ending in :key, then falls back to discovering it from the :entries set.
+func (s *Service) GetTagVersion(ctx context.Context, tag string) (string, error) {
+	// Try standard Laravel version key format: tag:TAGNAME:key
+	versionKey := s.BuildKey("tag:", tag, ":key")
+	version, err := s.client.Get(ctx, versionKey).Result()
+	if err == nil && version != "" {
+		return version, nil
+	}
+
+	// Fallback: Discover from :entries if the version key is missing
+	entriesKey := s.BuildKey("tag:", tag, ":entries")
+	members, err := s.client.ZRange(ctx, entriesKey, 0, 0).Result()
+	if err == nil && len(members) > 0 {
+		// Laravel stores entries as "hash:original_key"
+		parts := strings.Split(members[0], ":")
+		if len(parts) > 1 {
+			return parts[0], nil
+		}
+	}
+
+	return "", fmt.Errorf("tag version not found for tag: %s", tag)
+}
+
+// BuildTaggedKey constructs a key that includes the Laravel tag version/hash.
+func (s *Service) BuildTaggedKey(ctx context.Context, tag string, parts ...string) string {
+	version, err := s.GetTagVersion(ctx, tag)
+	if err != nil {
+		return s.BuildKey(parts...)
+	}
+
+	// Prepend hash followed by colon to the key parts
+	allParts := append([]string{version + ":"}, parts...)
+	return s.BuildKey(allParts...)
+}
+
 func (s *Service) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
 	return s.client.Set(ctx, key, value, ttl).Err()
 }
@@ -62,10 +98,10 @@ func (s *Service) GetJSON(ctx context.Context, key string, dest interface{}) err
 		// Convert the map[interface{}]interface{} to map[string]interface{}
 		// JSON cannot encode map[interface{}]interface{} natively
 		stringMap := convertToStringMap(phpDest)
-		
+
 		// Re-encode to JSON so we can unmarshal it into the user's strongly typed struct
 		jsonData, err := json.Marshal(stringMap)
-		
+
 		if err == nil {
 			return json.Unmarshal(jsonData, dest)
 		}
@@ -81,7 +117,7 @@ func convertToStringMap(m map[interface{}]interface{}) map[string]interface{} {
 	res := make(map[string]interface{})
 	for k, v := range m {
 		keyStr := fmt.Sprintf("%v", k)
-		
+
 		switch val := v.(type) {
 		case map[interface{}]interface{}:
 			res[keyStr] = convertToStringMap(val)

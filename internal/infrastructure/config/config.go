@@ -127,6 +127,7 @@ type CacheTags struct {
     DraftBill       string
     ScreenLink      string
     ProductImage    string
+    Store           string
 }
 
 type CacheExpiry struct {
@@ -158,7 +159,7 @@ func loadCachePrefixes() CachePrefixes {
         Till:                   envStringOrDefault("TILL_CACHE_PREFIX", "till_cache_data_"),
         PosAuthUser:            envStringOrDefault("POS_AUTH_USER_CACHE_KEY_PREFIX", "pos_auth_user_cache_"),
         PosAuthToken:           envStringOrDefault("POS_AUTH_CACHE_KEY_PREFIX", "pos_auth_token_"),
-        Store:                  envStringOrDefault("STORE_CACHE_KEY", "STORE_CACHE_KEY_"),
+        Store:                  envStringOrDefault("STORE_CACHE_PREFIX", "STORE_CACHE_PREFIX_"),
         User:                   envStringOrDefault("USER_CACHE_KEY", "USER_CACHE_KEY_"),
         DeviceRemember:         envStringOrDefault("DEVICE_REMEMBER_CACHE_KEY", "device_remember"),
         Device:                 envStringOrDefault("DEVICE_CACHE_KEY", "device:"),
@@ -188,6 +189,7 @@ func loadCacheTags() CacheTags {
         DraftBill:        envStringOrDefault("PREFIX_DRAFT_BILL_CACHE_TAGS", "draft_invoices_tags_"),
         ScreenLink:       envStringOrDefault("SCREEN_LINK_CACHE_TAG", "SCREEN_LINK_CACHE"),
         ProductImage:     envStringOrDefault("PRODUCT_IMAGE_CACHE_TAG", "product_image_cache"),
+        Store:            envStringOrDefault("STORE_CACHE_TAG", "STORE_CACHE_TAG_"),
     }
 }
 
