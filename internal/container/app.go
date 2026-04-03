@@ -7,9 +7,10 @@ import (
 )
 
 type ServerApp struct {
-	SalesInvoiceHandler        *handlers.SalesInvoiceHandler
+	SalesInvoiceHandler            *handlers.SalesInvoiceHandler
 	DuplicateRequestMiddleware     *middleware.DuplicateRequestMiddleware
+	DeviceTokenValidateMiddleware  *middleware.DeviceTokenValidateMiddleware
 	CacheMasterService             service.CacheMasterService
-	// SPOSCheckPermissionsMiddleware *middleware.SPOSCheckPermissionsMiddleware
+	SPOSCheckPermissionsMiddleware *middleware.SPOSCheckPermissionsMiddleware
 	CacheTestHandler               *handlers.CacheTestHandler
 }

@@ -55,7 +55,6 @@ func (m *DuplicateRequestMiddleware) Handle() gin.HandlerFunc {
 		}
 
 		_ = m.cache.Set(c.Request.Context(), key, hash, time.Duration(m.cfg.DuplicateRequestExpirySeconds)*time.Second)
-		c.Set("duplicate_key", key)
 
 		c.Next()
 

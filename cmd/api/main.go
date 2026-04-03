@@ -88,9 +88,10 @@ func runServer() {
 
 	// Register API routes
 	routes.RegisterAllRoutes(r, routes.RouteConfig{
-		SalesInvoiceHandler:            app.SalesInvoiceHandler,
 		DuplicateRequestMiddleware:     app.DuplicateRequestMiddleware,
-		// SPOSCheckPermissionsMiddleware: app.SPOSCheckPermissionsMiddleware,
+		DeviceTokenValidateMiddleware:  app.DeviceTokenValidateMiddleware,
+		SPOSCheckPermissionsMiddleware: app.SPOSCheckPermissionsMiddleware,
+		SalesInvoiceHandler:            app.SalesInvoiceHandler,
 		CacheTestHandler:               app.CacheTestHandler,
 	})
 

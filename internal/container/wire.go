@@ -32,14 +32,16 @@ func InitializeServerApp() (*ServerApp, error) {
 	cacheTagsCfg := cacheCfg.Tags
 	cacheExpiryCfg := cacheCfg.Expiry
 	cacheMasterService := service.NewCacheMasterService(cacheService, cachePrefixesCfg, cacheTagsCfg, cacheExpiryCfg)
-	// sposCheckPermissionsMiddleware := middleware.NewSPOSCheckPermissionsMiddleware(cacheMasterService)
+	deviceTokenValidateMiddleware := middleware.NewDeviceTokenValidateMiddleware(cacheMasterService, cachePrefixesCfg)
+	sposCheckPermissionsMiddleware := middleware.NewSPOSCheckPermissionsMiddleware(cacheMasterService)
 	cacheTestHandler := handlers.NewCacheTestHandler(cacheMasterService)
 
 	return &ServerApp{
 		SalesInvoiceHandler:            salesInvoiceHandler,
 		DuplicateRequestMiddleware:     duplicateRequestMiddleware,
+		DeviceTokenValidateMiddleware:  deviceTokenValidateMiddleware,
 		CacheMasterService:             cacheMasterService,
-		// SPOSCheckPermissionsMiddleware: sposCheckPermissionsMiddleware,
+		SPOSCheckPermissionsMiddleware: sposCheckPermissionsMiddleware,
 		CacheTestHandler:               cacheTestHandler,
 	}, nil
 }

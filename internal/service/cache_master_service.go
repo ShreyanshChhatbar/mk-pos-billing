@@ -172,7 +172,7 @@ func (s *cacheMasterService) GetUserCache(ctx context.Context, userID int, dbFal
 func (s *cacheMasterService) GetDeviceCache(ctx context.Context, deviceToken string) (map[string]interface{}, error) {
 	// First, fetch the array/list of allowed device tokens
 	deviceRememberKey := s.cacheSvc.BuildKey(s.prefixes.DeviceRemember, "")
-	var deviceTokens []string
+	var deviceTokens map[string]interface{}
 	
 	err := s.cacheSvc.GetJSON(ctx, deviceRememberKey, &deviceTokens)
 	if err != nil {

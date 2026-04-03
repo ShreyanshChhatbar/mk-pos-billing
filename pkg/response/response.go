@@ -1,6 +1,8 @@
 package response
 
 import (
+	"encoding/json"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,12 +25,38 @@ type ErrorDetail struct {
 
 // APIResponse is the unified envelope
 type APIResponse struct {
-	Success bool         `json:"success"`         // Explicit success/fail flag
-	Code    int          `json:"code"`            // Matches HTTP status (legacy compatibility)
-	Message string       `json:"message"`         // Top level human readable message
-	Data    interface{}  `json:"data,omitempty"`  // Payload (Struct, Slice, Map, nil)
-	Meta    *Meta        `json:"meta,omitempty"`  // Pagination data (nil if not paginated)
-	Error   *ErrorDetail `json:"error,omitempty"` // Error object (nil on success)
+	Success bool                   `json:"success"`         // Explicit success/fail flag
+	Code    int                    `json:"code"`            // Matches HTTP status (legacy compatibility)
+	Type    string                 `json:"type,omitempty"`    // e.g., "Validation Error", "Unauthorized"
+	Message string                 `json:"message"`         // Top level human readable message
+	Data    interface{}            `json:"data,omitempty"`  // Payload (Struct, Slice, Map, nil)
+	Meta    *Meta                  `json:"meta,omitempty"`  // Pagination data (nil if not paginated)
+	Error   *ErrorDetail           `json:"error,omitempty"` // Error object (nil on success)
+	Flags   map[string]interface{} `json:"-"`               // Custom top-level flags (flattened via MarshalJSON)
+}
+
+// MarshalJSON flattens the Flags map into the top-level JSON object
+func (r APIResponse) MarshalJSON() ([]byte, error) {
+	type Alias APIResponse
+	base, err := json.Marshal(Alias(r))
+	if err != nil {
+		return nil, err
+	}
+
+	if len(r.Flags) == 0 {
+		return base, nil
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(base, &m); err != nil {
+		return nil, err
+	}
+
+	for k, v := range r.Flags {
+		m[k] = v
+	}
+
+	return json.Marshal(m)
 }
 
 // Success returns a standardized success response
@@ -52,17 +80,20 @@ func Paginated(c *gin.Context, code int, message string, data interface{}, meta 
 	})
 }
 
-// Error returns a standardized error response
-func Error(c *gin.Context, code int, errType string, message string) {
-	c.JSON(code, APIResponse{
-		Success: false,
+// Error returns a standardized error response with optional top-level flags
+func Error(c *gin.Context, code int, message string, flags ...map[string]interface{}) {
+	res := APIResponse{
 		Code:    code,
+		Type:    resolveResponseType(code),
 		Message: message,
-		Error: &ErrorDetail{
-			Type:    errType,
-			Message: message,
-		},
-	})
+		Success: false,
+	}
+
+	if len(flags) > 0 {
+		res.Flags = flags[0]
+	}
+
+	c.JSON(code, res)
 }
 
 // ValidationError returns a standardized validation error response
@@ -72,23 +103,44 @@ func ValidationError(c *gin.Context, message string, details map[string][]string
 		Code:    400,
 		Message: message,
 		Error: &ErrorDetail{
-			Type:    "Bad Request",
+			Type:    resolveResponseType(400),
 			Message: message,
 			Details: details,
 		},
 	})
 }
 
-// MiddlewareError returns a standardized middleware error response with custom flags
+// MiddlewareError returns a standardized middleware error response with custom top-level flags
 func MiddlewareError(c *gin.Context, code int, errType string, message string, flags map[string]interface{}) {
 	c.JSON(code, APIResponse{
 		Success: false,
 		Code:    code,
 		Message: message,
-		Error: &ErrorDetail{
-			Type:    errType,
-			Message: message,
-			Flags:   flags,
-		},
+		Type:    resolveResponseType(code),
+		Flags:   flags,
 	})
+}
+
+func resolveResponseType(code int) string {
+	mapCodes := map[int]string{
+		200: "Success",
+		201: "Created",
+		202: "Success",
+		307: "Temporary Redirect",
+		400: "Bad request",
+		401: "Unauthorized (Invalid token)",
+		403: "Forbidden",
+		404: "Url not found",
+		405: "Method not allowed",
+		406: "Not acceptable",
+		408: "Invalid Device ID",
+		409: "Order not acceptable",
+		429: "Too many requests",
+		500: "Server error",
+	}
+
+	if val, ok := mapCodes[code]; ok {
+		return val
+	}
+	return "Internal Server Error"
 }

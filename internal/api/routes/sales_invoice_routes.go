@@ -7,11 +7,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SalesInvoiceRoutes(r *gin.Engine, salesInvoiceHandler *handlers.SalesInvoiceHandler, duplicateMW *middleware.DuplicateRequestMiddleware) {
-	v1 := r.Group("/api/v1")
-
-	draft := v1.Group("/sales/sales-invoice/draft")
-	draft.Use(duplicateMW.Handle())
-	draft.POST("/create", salesInvoiceHandler.CreateSalesInvoice)
+func SalesInvoiceRoutes(r *gin.RouterGroup, salesInvoiceHandler *handlers.SalesInvoiceHandler, duplicateMW *middleware.DuplicateRequestMiddleware, deviceTokenValidateMiddleware *middleware.DeviceTokenValidateMiddleware, sposCheckPermissionsMiddleware *middleware.SPOSCheckPermissionsMiddleware) {
+	draft := r.Group("/sales/sales-invoice/draft")
+	draft.Use(deviceTokenValidateMiddleware.Handle(), sposCheckPermissionsMiddleware.Handle())
+	draft.POST("/create", duplicateMW.Handle(), salesInvoiceHandler.CreateSalesInvoice)
 	draft.PUT("/:id", salesInvoiceHandler.UpdateSalesInvoice)
 }

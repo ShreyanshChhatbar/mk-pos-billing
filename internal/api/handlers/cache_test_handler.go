@@ -26,7 +26,7 @@ func (h *CacheTestHandler) GetTillCache(c *gin.Context) {
 
 	data, err := h.cacheMaster.GetTillCache(c.Request.Context(), storeID, false)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Internal Server Error", err.Error())
+		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -43,7 +43,7 @@ func (h *CacheTestHandler) GetUserAuthCache(c *gin.Context) {
 
 	data, err := h.cacheMaster.GetUserAuthCache(c.Request.Context(), token)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Internal Server Error", err.Error())
+		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -59,7 +59,7 @@ func (h *CacheTestHandler) GetStoreCache(c *gin.Context) {
 
 	data, err := h.cacheMaster.GetStoreCache(c.Request.Context(), storeID, false)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Internal Server Error", err.Error())
+		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -75,7 +75,7 @@ func (h *CacheTestHandler) GetProductCache(c *gin.Context) {
 
 	data, err := h.cacheMaster.GetProductCache(c.Request.Context(), productID)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "Internal Server Error", err.Error())
+		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 

@@ -91,23 +91,42 @@ func (s *Service) GetJSON(ctx context.Context, key string, dest interface{}) err
 		fmt.Println("Redis Error: ", err)
 		return err
 	}
+	// 1. Try PHP Unmarshal
+	var raw interface{}
+	var phpErr error
 
-	// First try to parse as PHP serialized data since Laravel uses this
-	phpDest := make(map[interface{}]interface{})
-	if err := phpserialize.Unmarshal(data, &phpDest); err == nil {
-		// Convert the map[interface{}]interface{} to map[string]interface{}
-		// JSON cannot encode map[interface{}]interface{} natively
-		stringMap := convertToStringMap(phpDest)
-
-		// Re-encode to JSON so we can unmarshal it into the user's strongly typed struct
-		jsonData, err := json.Marshal(stringMap)
-
-		if err == nil {
-			return json.Unmarshal(jsonData, dest)
+	// Detect PHP type and use specific unmarshaler
+	if len(data) > 2 && data[1] == ':' {
+		switch data[0] {
+		case 'a', 'O': // Array or Object
+			m, err := phpserialize.UnmarshalAssociativeArray(data)
+			if err == nil {
+				raw = phpserialize.StringifyKeys(m)
+			} else {
+				phpErr = err
+			}
+		case 's':
+			raw, phpErr = phpserialize.UnmarshalString(data)
+		case 'i':
+			raw, phpErr = phpserialize.UnmarshalInt(data)
+		case 'd':
+			raw, phpErr = phpserialize.UnmarshalFloat(data)
+		case 'b':
+			raw, phpErr = phpserialize.UnmarshalBool(data)
 		}
 	}
 
-	// Fallback to standard JSON parsing if it's not a PHP serialized string
+	if phpErr == nil && raw != nil {
+		// JSON Bridge: Safe population behavior
+		tempJSON, jerr := json.Marshal(raw)
+		if jerr == nil {
+			if jerry := json.Unmarshal(tempJSON, dest); jerry == nil {
+				return nil
+			}
+		}
+	}
+
+	// Fallback to standard JSON parsing
 	return json.Unmarshal(data, dest)
 }
 

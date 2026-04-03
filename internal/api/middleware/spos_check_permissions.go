@@ -41,7 +41,7 @@ func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 		// 1. Get and Validate Store Header
 		store := c.GetHeader("store")
 		if store == "" {
-			response.Error(c, http.StatusBadRequest, "Bad Request", "Store Not Found")
+			response.Error(c, http.StatusBadRequest, "Store Not Found")
 			c.Abort()
 			return
 		}
@@ -50,7 +50,7 @@ func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 		var token string
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			response.Error(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized")
+			response.Error(c, http.StatusUnauthorized, "Unauthorized")
 			c.Abort()
 			return
 		}
@@ -60,13 +60,13 @@ func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 		// 3. Get User Auth Cache via CacheMasterService
 		userCacheMaster, err := m.cacheMaster.GetUserAuthCache(c.Request.Context(), token)
 		if err != nil {
-			response.Error(c, http.StatusInternalServerError, "Internal Server Error", "Something went wrong")
+			response.Error(c, http.StatusInternalServerError, "Something went wrong")
 			c.Abort()
 			return
 		}
 
 		if len(userCacheMaster) == 0 {
-			response.Error(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, you don`t have any permissions")
+			response.Error(c, http.StatusUnauthorized, "Unauthorized, you don`t have any permissions")
 			c.Abort()
 			return
 		}
