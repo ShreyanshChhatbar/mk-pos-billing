@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "mk-pos-billing-api",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

@@ -10,11 +10,13 @@ import (
 	"mk-pos-billing/internal/domain/repository"
 	"mk-pos-billing/internal/infrastructure/cache"
 	"mk-pos-billing/internal/infrastructure/config"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -52,6 +54,7 @@ type CreateOrUpdateSalesInvoiceInput struct {
 	TillID            *uint64
 	TillTransactionID *uint64
 	UserID            uint64
+	ItemsPresent      bool
 	Items             []CreateOrUpdateSalesInvoiceItem
 	Payments          []CreateOrUpdateSalesInvoicePayment
 }
@@ -66,6 +69,7 @@ type CreateOrUpdateSalesInvoiceItem struct {
 }
 
 type CreateOrUpdateSalesInvoicePayment struct {
+	ID                   *uint64
 	StorePaymentMethodID uint64
 	Amount               float64
 	VoucherCode          *string
@@ -178,6 +182,8 @@ func NewSalesInvoiceService(repo *repository.SalesInvoiceRepository, cacheServic
 }
 
 func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOrUpdateSalesInvoiceInput) (*CreateOrUpdateSalesInvoiceOutput, error) {
+	input.OrganizationID = s.cfg.DefaultOrganizationID
+
 	if err := s.validateInput(ctx, input); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrValidation, err.Error())
 	}
@@ -194,8 +200,21 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			return err
 		}
 
-		if input.ID != nil && len(input.Items) == 0 {
-			// update with no items => clear draft products
+		if input.ID != nil && !input.ItemsPresent {
+			existingPayments, err := txRepo.GetDraftPayments(ctx, draft.ID)
+			if err != nil {
+				return err
+			}
+			_, draftPayments := buildDraftPayments(input, draft.ID)
+			if err := txRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
+				return err
+			}
+			if len(draftPayments) > 0 {
+				existingPayments, err = txRepo.GetDraftPayments(ctx, draft.ID)
+				if err != nil {
+					return err
+				}
+			}
 			emptyPayload := salesInvoiceDraftJSONPayload{Products: []draftProductJSON{}}
 			raw, _ := json.Marshal(emptyPayload)
 			draft.DraftJSON = raw
@@ -205,11 +224,11 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			draft.TotalAmount = 0
 			draft.TotalBillAmount = 0
 			draft.TotalInvoiceAmount = 0
-			draft.TotalAmountReceived = 0
+			draft.TotalAmountReceived = totalReceivedFromDraftPayments(existingPayments)
 			draft.TotalDiscount = 0
 			draft.RoundOff = 0
-			draft.Status = salesInvoiceStatusDraft
-			draft.PaymentStatus = salesPaymentStatusDraft
+			draft.Status = resolveDraftStatus(len(existingPayments) > 0 || len(draftPayments) > 0)
+			draft.PaymentStatus = resolvePaymentStatus(draft.TotalAmountReceived, 0)
 			draft.UpdatedBy = &input.UserID
 			if err := txRepo.SaveDraft(ctx, draft); err != nil {
 				return err
@@ -218,7 +237,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			cacheData := draftCacheData{SalesInvoiceDraft: *draft, CalculatedProductData: draftCalculatedProductContainer{Products: map[string]draftProductJSON{}}}
 			_ = s.cache.SetJSON(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
 
-			out = &CreateOrUpdateSalesInvoiceOutput{Data: s.buildDraftResponse(*draft, nil, []model.SalesInvoiceDraftPayment{}), Message: "Sales Invoice (Draft) Updated Successfully"}
+			out = &CreateOrUpdateSalesInvoiceOutput{Data: s.buildDraftResponse(*draft, nil, existingPayments), Message: "Sales Invoice (Draft) Updated Successfully"}
 			return nil
 		}
 
@@ -231,12 +250,14 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		roundOff := totalInvoice - totalBill
 		totalDiscount := totalAmount - totalBill
 
-		totalReceived, draftPayments := buildDraftPayments(input, draft.ID)
-		paymentStatus := resolvePaymentStatus(totalReceived, totalInvoice)
-		status := salesInvoiceStatusDraft
-		if len(draftPayments) > 0 {
-			status = salesInvoiceStatusPaymentPending
+		existingPayments, err := txRepo.GetDraftPayments(ctx, draft.ID)
+		if err != nil {
+			return err
 		}
+		newPaymentTotal, draftPayments := buildDraftPayments(input, draft.ID)
+		totalReceived := round2(totalReceivedFromDraftPayments(existingPayments) + newPaymentTotal)
+		paymentStatus := resolvePaymentStatus(totalReceived, totalInvoice)
+		status := resolveDraftStatus(len(existingPayments) > 0 || len(draftPayments) > 0)
 
 		isHomeDelivery := false
 		if input.IsHomeDelivery != nil {
@@ -326,7 +347,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		for i := range draftPayments {
 			draftPayments[i].SalesInvoiceDraftID = draft.ID
 		}
-		if err := txRepo.ReplaceDraftPayments(ctx, draft.ID, draftPayments, input.UserID); err != nil {
+		if err := txRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
 			return err
 		}
 
@@ -347,7 +368,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			return nil
 		}
 
-		if round2(draft.TotalAmountReceived+draft.PrepaidAmount) != round2(draft.TotalInvoiceAmount) {
+		if !hasAdvanceRefundPayment(persistedPayments) && round2(draft.TotalAmountReceived+draft.PrepaidAmount) != round2(draft.TotalInvoiceAmount) {
 			return fmt.Errorf("entered amount is more then the bill amount, please enter proper amount")
 		}
 
@@ -427,6 +448,9 @@ func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrU
 		if strings.TrimSpace(item.BatchCode) == "" {
 			return errors.New("items." + strconv.Itoa(i) + ".batch_code is required")
 		}
+		if s.cfg.BatchCodeLength > 0 && len(item.BatchCode) > s.cfg.BatchCodeLength {
+			return errors.New("items." + strconv.Itoa(i) + ".batch_code length is invalid")
+		}
 		if item.Quantity <= 0 {
 			return errors.New("items." + strconv.Itoa(i) + ".quantity must be > 0")
 		}
@@ -500,7 +524,7 @@ func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, repo *rep
 	if err != nil {
 		return nil, 0, 0, 0, 0, 0, err
 	}
-	stockRows, err := repo.FetchBatchStocks(ctx, input.StoreID, productIDs, batchCodes, false)
+	stockRows, err := repo.FetchBatchStocks(ctx, input.StoreID, productIDs, batchCodes, false, s.batchExpiryCutoff())
 	if err != nil {
 		return nil, 0, 0, 0, 0, 0, err
 	}
@@ -615,7 +639,7 @@ func (s *SalesInvoiceService) finalizeInvoice(
 	}
 
 	productIDs, batchCodes := extractProductIDsAndBatchCodes(lines)
-	batchStocks, err := repo.FetchBatchStocks(ctx, input.StoreID, productIDs, batchCodes, false)
+	batchStocks, err := repo.FetchBatchStocks(ctx, input.StoreID, productIDs, batchCodes, false, s.batchExpiryCutoff())
 	if err != nil {
 		return 0, err
 	}
@@ -653,7 +677,7 @@ func (s *SalesInvoiceService) finalizeInvoice(
 			}
 			details = append(details, detail)
 
-			if err := repo.ReduceInventoryStock(ctx, input.StoreID, line.Item.ProductID, line.Item.BatchCode, alloc.QuantityTaken); err != nil {
+			if err := repo.ReduceInventoryStock(ctx, input.StoreID, line.Item.ProductID, alloc.StoreBatchID, line.Item.BatchCode, alloc.QuantityTaken); err != nil {
 				return 0, err
 			}
 		}
@@ -706,6 +730,10 @@ func (s *SalesInvoiceService) buildDraftCacheKeys(storeID uint64, draftID *uint6
 	return key, tag, tag + ":" + key
 }
 
+func (s *SalesInvoiceService) batchExpiryCutoff() time.Time {
+	return time.Now().AddDate(0, 0, s.cfg.DefaultMinimumDaysForBatch).Truncate(24 * time.Hour)
+}
+
 func (s *SalesInvoiceService) getDraftCache(ctx context.Context, combinedKey string) (*draftCacheData, error) {
 	var data draftCacheData
 	err := s.cache.GetJSON(ctx, combinedKey, &data)
@@ -745,7 +773,10 @@ func (s *SalesInvoiceService) linesToProductsMap(lines []draftComputedLine) map[
 
 func (s *SalesInvoiceService) buildDraftResponse(draft model.SalesInvoiceDraftJSON, items []draftProductJSON, payments []model.SalesInvoiceDraftPayment) draftResponse {
 	if items == nil {
-		_ = json.Unmarshal(draft.DraftJSON, &salesInvoiceDraftJSONPayload{Products: items})
+		var payload salesInvoiceDraftJSONPayload
+		if err := json.Unmarshal(draft.DraftJSON, &payload); err == nil {
+			items = payload.Products
+		}
 	}
 	pRes := make([]draftPaymentResp, 0, len(payments))
 	for _, p := range payments {
@@ -806,6 +837,9 @@ func buildDraftPayments(input CreateOrUpdateSalesInvoiceInput, draftID uint64) (
 	totalReceived := 0.0
 	payments := make([]model.SalesInvoiceDraftPayment, 0, len(input.Payments))
 	for _, p := range input.Payments {
+		if p.ID != nil && *p.ID > 0 {
+			continue
+		}
 		amount := round2(p.Amount)
 		ptype := salesPaymentTypeSales
 		if p.IsAdvanceRefund {
@@ -828,6 +862,33 @@ func buildDraftPayments(input CreateOrUpdateSalesInvoiceInput, draftID uint64) (
 		})
 	}
 	return round2(totalReceived), payments
+}
+
+func totalReceivedFromDraftPayments(payments []model.SalesInvoiceDraftPayment) float64 {
+	total := 0.0
+	for _, payment := range payments {
+		if payment.Type == salesPaymentTypeAdvanceRefund {
+			continue
+		}
+		total += payment.Amount
+	}
+	return round2(total)
+}
+
+func hasAdvanceRefundPayment(payments []model.SalesInvoiceDraftPayment) bool {
+	for _, payment := range payments {
+		if payment.Type == salesPaymentTypeAdvanceRefund {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveDraftStatus(hasPayments bool) string {
+	if hasPayments {
+		return salesInvoiceStatusPaymentPending
+	}
+	return salesInvoiceStatusDraft
 }
 
 func resolvePaymentStatus(totalReceived, invoiceTotal float64) string {

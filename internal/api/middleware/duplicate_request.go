@@ -40,45 +40,46 @@ func (m *DuplicateRequestMiddleware) Handle() gin.HandlerFunc {
 		}
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(raw))
 
-		payload := map[string]interface{}{}
-		_ = json.Unmarshal(raw, &payload)
+		payload := buildDuplicatePayload(c, raw)
+		canonicalPayload, _ := json.Marshal(payload)
 
-		userID := parseUserID(payload)
+		userID, _ := POSUserID(c)
 		key := buildDuplicateKey(userID, m.cfg.DuplicateCheckCacheKey, c.Request.URL.Path)
-		hash := hashBody(raw)
+		hash := hashBody(canonicalPayload)
 
-		cached, getErr := m.cache.Get(c.Request.Context(), key)
-		if getErr == nil && cached == hash {
-			c.JSON(http.StatusTooManyRequests, gin.H{"code": 429, "type": "Not Acceptable", "message": "Duplicate Request Received"})
-			c.Abort()
-			return
-		}
-
-		_ = m.cache.Set(c.Request.Context(), key, hash, time.Duration(m.cfg.DuplicateRequestExpirySeconds)*time.Second)
-
-		c.Next()
-
-		if c.Writer.Status() >= 400 {
-			if v, ok := c.Get("duplicate_key"); ok {
-				if k, ok := v.(string); ok && k != "" {
-					_ = m.cache.Delete(c.Request.Context(), k)
-				}
+		added, err := m.cache.Add(c.Request.Context(), key, hash, time.Duration(m.cfg.DuplicateRequestExpirySeconds)*time.Second)
+		if err == nil && !added {
+			cached, getErr := m.cache.Get(c.Request.Context(), key)
+			if getErr == nil && cached == hash {
+				c.JSON(http.StatusTooManyRequests, gin.H{"code": 429, "type": "Not Acceptable", "message": "Duplicate Request Received"})
+				c.Abort()
+				return
 			}
 		}
+
+		c.Next()
 	}
 }
 
-func parseUserID(payload map[string]interface{}) uint64 {
-	if v, ok := payload["user_id"]; ok {
-		switch t := v.(type) {
-		case float64:
-			return uint64(t)
-		case string:
-			i, _ := strconv.ParseUint(t, 10, 64)
-			return i
-		}
+func buildDuplicatePayload(c *gin.Context, raw []byte) map[string]interface{} {
+	payload := map[string]interface{}{}
+	_ = json.Unmarshal(raw, &payload)
+	if userID, ok := POSUserID(c); ok {
+		payload["user_id"] = userID
 	}
-	return 0
+	if storeID, ok := POSStoreID(c); ok {
+		payload["store_id"] = storeID
+	}
+	if deviceMasterID, ok := POSDeviceMasterID(c); ok && deviceMasterID != nil {
+		payload["device_master_id"] = *deviceMasterID
+	}
+	if tillID, ok := POSTillID(c); ok && tillID != nil {
+		payload["till_id"] = *tillID
+	}
+	if tillTransactionID, ok := POSTillTransactionID(c); ok && tillTransactionID != nil {
+		payload["till_transaction_id"] = *tillTransactionID
+	}
+	return payload
 }
 
 func buildDuplicateKey(userID uint64, prefix, path string) string {

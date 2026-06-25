@@ -1,0 +1,22 @@
+Feature: Default-organization sales invoice draft create/update
+
+Endpoints:
+- `POST /api/v1/sales/sales-invoice/draft/create`
+- `PUT /api/v1/sales/sales-invoice/draft/{id}`
+
+Test Cases
+1. Create draft with valid device/user/store/till cache, valid item stock, and `is_confirmed=false`; expect draft row, draft JSON products, default organization id, and success message.
+2. Update draft with valid items; expect same draft id, recalculated totals, cache refresh, and no client body context fields trusted.
+3. Update draft with `items` omitted; expect draft products and product totals cleared while existing draft payments remain active.
+4. Update draft with existing payment `id` plus one new payment; expect only the new payment inserted and total received includes active non-advance-refund payments once.
+5. Confirm fully paid draft; expect invoice, invoice details, copied payments, exact `store_batch_id` stock decrement, and draft status `INVOICED`.
+6. Confirm with mismatched payment total and no `ADVANCE_REFUND`; expect `400` payment amount error.
+7. Confirm with an `ADVANCE_REFUND` draft payment; expect payment-total equality check bypassed.
+8. Repeat the same POST/PUT payload within duplicate TTL; expect `429 Duplicate Request Received`.
+9. Send body `organization_id`, `store_id`, `user_id`, `device_master_id`, `till_id`, or `till_transaction_id`; expect stored values come from config/middleware context only.
+10. Use ONGC/external organization request fields or non-default organization id; expect no external organization flow or organization credit side effects.
+
+Verification
+1. Run `GOCACHE=/tmp/go-build go test ./...`.
+2. Compare affected DB rows with Laravel default-organization flow for matching payloads.
+3. Verify Redis keys use Laravel-compatible prefixes and tags.

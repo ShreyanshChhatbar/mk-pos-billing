@@ -1,24 +1,24 @@
 package request
 
 type CreateOrUpdateSalesInvoiceRequest struct {
-	BillingUserID     uint64                      `json:"billing_user_id"`
-	CustomerID        *uint64                     `json:"customer_id"`
-	CustomerAddressID *uint64                     `json:"customer_address_id"`
-	DoctorID          *uint64                     `json:"doctor_id"`
-	PatientID         *uint64                     `json:"patient_id"`
-	IsHomeDelivery    *bool                       `json:"is_home_delivery"`
-	IsConfirmed       *bool                       `json:"is_confirmed"`
-	PromoCode         *string                     `json:"promo_code"`
-	CourseDays        *float64                    `json:"course_days"`
-	Notes             *string                     `json:"notes"`
-	ASMUserID         *uint64                     `json:"asm_user_id"`
-	StoreID           uint64                      `json:"store_id"`
-	UserID            uint64                      `json:"user_id"`
-	DeviceMasterID    *uint64                     `json:"device_master_id"`
-	TillID            *uint64                     `json:"till_id"`
-	TillTransactionID *uint64                     `json:"till_transaction_id"`
-	Items             []CreateOrUpdateInvoiceItem `json:"items"`
-	Payments          []CreateOrUpdatePayment     `json:"payments"`
+	BillingUserID     uint64                       `json:"billing_user_id"`
+	CustomerID        *uint64                      `json:"customer_id"`
+	CustomerAddressID *uint64                      `json:"customer_address_id"`
+	DoctorID          *uint64                      `json:"doctor_id"`
+	PatientID         *uint64                      `json:"patient_id"`
+	IsHomeDelivery    *bool                        `json:"is_home_delivery"`
+	IsConfirmed       *bool                        `json:"is_confirmed"`
+	PromoCode         *string                      `json:"promo_code"`
+	CourseDays        *float64                     `json:"course_days"`
+	Notes             *string                      `json:"notes"`
+	ASMUserID         *uint64                      `json:"asm_user_id"`
+	StoreID           uint64                       `json:"store_id"`
+	UserID            uint64                       `json:"user_id"`
+	DeviceMasterID    *uint64                      `json:"device_master_id"`
+	TillID            *uint64                      `json:"till_id"`
+	TillTransactionID *uint64                      `json:"till_transaction_id"`
+	Items             *[]CreateOrUpdateInvoiceItem `json:"items"`
+	Payments          []CreateOrUpdatePayment      `json:"payments"`
 }
 
 type CreateOrUpdateInvoiceItem struct {
@@ -34,6 +34,7 @@ type CreateOrUpdateInvoiceItem struct {
 }
 
 type CreateOrUpdatePayment struct {
+	ID                   *uint64 `json:"id"`
 	StorePaymentMethodID uint64  `json:"store_payment_method_id"`
 	Amount               float64 `json:"amount"`
 	VoucherCode          *string `json:"voucher_code"`

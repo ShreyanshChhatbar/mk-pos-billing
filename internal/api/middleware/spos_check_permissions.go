@@ -2,13 +2,16 @@ package middleware
 
 import (
 	"fmt"
+	// "go/printer"
 	"mk-pos-billing/internal/service"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"mk-pos-billing/pkg/response"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type SPOSCheckPermissionsMiddleware struct {
@@ -38,79 +41,64 @@ func getOperation(method string) string {
 
 func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 1. Get and Validate Store Header
-		store := c.GetHeader("store")
-		if store == "" {
+		storeHeader := strings.TrimSpace(c.GetHeader("store"))
+		if storeHeader == "" {
 			response.Error(c, http.StatusBadRequest, "Store Not Found")
 			c.Abort()
 			return
 		}
-
-		// 2. Extract Authorization Header
-		var token string
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			response.Error(c, http.StatusUnauthorized, "Unauthorized")
+		storeID, err := strconv.ParseUint(storeHeader, 10, 64)
+		zap.L().Info("SPOSCheckPermissionsMiddleware: storeCache", zap.Any("storeID", storeID), zap.Uint64("storeID", storeID))
+		// print("------------store_id-----------------00000000000000000000", storeID)
+		if err != nil || storeID == 0 {
+			response.Error(c, http.StatusBadRequest, "Invalid Store")
 			c.Abort()
 			return
 		}
 
-		token = strings.TrimPrefix(authHeader, "Bearer ")
-
-		// 3. Get User Auth Cache via CacheMasterService
-		userCacheMaster, err := m.cacheMaster.GetUserAuthCache(c.Request.Context(), token)
-		if err != nil {
-			response.Error(c, http.StatusInternalServerError, "Something went wrong")
+		storeCache, err := m.cacheMaster.GetStoreCache(c.Request.Context(), int(storeID), false)
+		// print("storeCache", storeCache)
+		zap.L().Info("SPOSCheckPermissionsMiddleware: storeCache", zap.Any("storeCache", storeCache), zap.Uint64("storeID", storeID))
+		if err != nil || len(storeCache) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "type": "Bad Request", "message": "Invalid Store"})
 			c.Abort()
 			return
 		}
 
-		if len(userCacheMaster) == 0 {
-			response.Error(c, http.StatusUnauthorized, "Unauthorized, you don`t have any permissions")
+		userID, userOK := POSUserID(c)
+		permissions, permsOK := POSPermissions(c)
+
+		if !userOK || !permsOK {
+			token := extractPOSBearerToken(c.GetHeader("Authorization"))
+			if token == "" {
+				response.Error(c, http.StatusUnauthorized, "Invalid User Token: Unauthorized")
+				c.Abort()
+				return
+			}
+			userCacheMaster, err := m.cacheMaster.GetUserAuthCache(c.Request.Context(), token)
+			if err != nil {
+				response.Error(c, http.StatusInternalServerError, "Something went wrong")
+				c.Abort()
+				return
+			}
+			if len(userCacheMaster) == 0 {
+				response.Error(c, http.StatusUnauthorized, "Unauthorized, you don`t have any permissions")
+				c.Abort()
+				return
+			}
+			userID, userOK = toUint64(userCacheMaster["user_id"])
+			permissions, permsOK = userCacheMaster["permissions"].(map[string]interface{})
+		}
+
+		if !userOK || len(permissions) == 0 {
+			response.MiddlewareError(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, Request for access to higher authorities!", map[string]interface{}{"store_access_required": true})
 			c.Abort()
 			return
 		}
 
-		userId := fmt.Sprint(userCacheMaster["user_id"])
-		var permissions map[string]interface{}
-		if perms, ok := userCacheMaster["permissions"].(map[string]interface{}); ok {
-			permissions = perms
-		}
-
-		if len(permissions) == 0 {
-			response.MiddlewareError(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, Request for access to higher authorities!", map[string]interface{}{
-				"store_access_required": true,
-			})
-			c.Abort()
-			return
-		}
-
-		// 4. Extract segments from URL path
-		// E.g. /api/v1/module/submodule/approve -> segments = ["", "api", "v1", "module", "submodule", "approve"]
-		path := strings.TrimSpace(c.Request.URL.Path)
-		segments := strings.Split(path, "/")
-		
-		// In Laravel, segment(1) is the first part after the domain name.
-		// In Gin, strings.Split("/a/b", "/") returns ["", "a", "b"].
-		// We need to map Laravel's `segment(3)` logic reliably. 
-		// Assuming base API structure: /api/v1/{module}/{subModule}/{approvalPermission?}
-		// segment(1) = api, segment(2) = v1, segment(3) = module...
-		
-		var module, subModule, approvalPermission string
-		// Adding +1 offset because strings.Split on a leading slash has an empty element at index 0.
-		if len(segments) > 3 {
-			module = strings.ToLower(segments[3])
-		}
-		if len(segments) > 4 {
-			subModule = strings.ToLower(segments[4])
-		}
-		if len(segments) > 5 {
-			approvalPermission = strings.ToLower(segments[5])
-		}
-
+		module, subModule, approvalPermission := laravelSegments(c.Request.URL.Path)
 		operation := getOperation(c.Request.Method)
 
-		// 5. Check Module Permission
 		modulePerms, hasModule := permissions[module]
 		if !hasModule {
 			response.MiddlewareError(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, You don't have access to this module!", map[string]interface{}{
@@ -120,7 +108,6 @@ func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 			return
 		}
 
-		// 6. Check SubModule Permission
 		modulePermsMap, ok := modulePerms.(map[string]interface{})
 		if !ok {
 			response.MiddlewareError(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, You don't have access to this module format!", map[string]interface{}{
@@ -139,25 +126,16 @@ func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 			return
 		}
 
-		// 7. Check Action (Operation)
-		subModuleActionsList, ok := subModulePerms.([]interface{})
-		if !ok {
+		hasOperation, validActionList := hasAction(subModulePerms, operation)
+		if !validActionList {
 			response.MiddlewareError(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, Invalid sub-module permissions format!", map[string]interface{}{
 				"is_permission_required": true,
 			})
 			c.Abort()
 			return
 		}
-
-		hasActionAccess := false
-		for _, action := range subModuleActionsList {
-			if fmt.Sprint(action) == operation {
-				hasActionAccess = true
-				break
-			}
-		}
-
-		if !hasActionAccess {
+		zap.L().Info("SPOSCheckPermissionsMiddleware: permissionsCheck", zap.Any("module", module), zap.Any("subModule", subModule), zap.Any("operation", operation), zap.Any("hasOperation", hasOperation), zap.Any("approvalPermission", approvalPermission))
+		if !hasOperation {
 			response.MiddlewareError(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, You don't have access to this action!", map[string]interface{}{
 				"is_permission_required": true,
 			})
@@ -165,28 +143,50 @@ func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 			return
 		}
 
-		// 8. Special Approval Permission Check
-		if approvalPermission == "approve" {
-			hasApproveAccess := false
-			for _, action := range subModuleActionsList {
-				if fmt.Sprint(action) == "APPROVE" {
-					hasApproveAccess = true
-					break
-				}
-			}
-			if !hasApproveAccess {
-				response.MiddlewareError(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, You don't have access to this action!", map[string]interface{}{
-					"is_permission_required": true,
-				})
-				c.Abort()
-				return
-			}
+		hasApprove, _ := hasAction(subModulePerms, "APPROVE")
+		if approvalPermission == "approve" && !hasApprove {
+			response.MiddlewareError(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, You don't have access to this action!", map[string]interface{}{
+				"is_permission_required": true,
+			})
+			c.Abort()
+			return
 		}
 
-		// 9. Merge data into Context
-		c.Set("store_id", store)
-		c.Set("login_user_id", userId)
+		SetPOSStoreID(c, storeID)
+		SetPOSUserID(c, userID)
 
 		c.Next()
 	}
+}
+
+func laravelSegments(path string) (string, string, string) {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	segment := func(pos int) string {
+		index := pos - 1
+		if index >= 0 && index < len(segments) {
+			return strings.ToLower(segments[index])
+		}
+		return ""
+	}
+	return segment(3), segment(4), segment(5)
+}
+
+func hasAction(actions interface{}, expected string) (bool, bool) {
+	switch list := actions.(type) {
+	case []interface{}:
+		for _, action := range list {
+			if fmt.Sprint(action) == expected {
+				return true, true
+			}
+		}
+		return false, true
+	case []string:
+		for _, action := range list {
+			if action == expected {
+				return true, true
+			}
+		}
+		return false, true
+	}
+	return false, false
 }

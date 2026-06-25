@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"mk-pos-billing/internal/api/middleware"
 	"mk-pos-billing/internal/api/request"
 	"mk-pos-billing/internal/infrastructure/config"
 	"mk-pos-billing/internal/service"
@@ -41,10 +42,21 @@ func (h *SalesInvoiceHandler) createOrUpdate(c *gin.Context, id *uint64) {
 		return
 	}
 
+	posCtx, ok := h.posContext(c)
+	if !ok {
+		return
+	}
+
+	itemsPresent := body.Items != nil
+	items := []request.CreateOrUpdateInvoiceItem{}
+	if body.Items != nil {
+		items = *body.Items
+	}
+
 	input := service.CreateOrUpdateSalesInvoiceInput{
 		ID:                id,
 		OrganizationID:    h.salesCfg.DefaultOrganizationID,
-		StoreID:           body.StoreID,
+		StoreID:           posCtx.StoreID,
 		BillingUserID:     body.BillingUserID,
 		CustomerID:        body.CustomerID,
 		CustomerAddressID: body.CustomerAddressID,
@@ -56,15 +68,16 @@ func (h *SalesInvoiceHandler) createOrUpdate(c *gin.Context, id *uint64) {
 		CourseDays:        body.CourseDays,
 		Notes:             body.Notes,
 		ASMUserID:         body.ASMUserID,
-		DeviceMasterID:    body.DeviceMasterID,
-		TillID:            body.TillID,
-		TillTransactionID: body.TillTransactionID,
-		UserID:            body.UserID,
-		Items:             make([]service.CreateOrUpdateSalesInvoiceItem, 0, len(body.Items)),
+		DeviceMasterID:    posCtx.DeviceMasterID,
+		TillID:            posCtx.TillID,
+		TillTransactionID: posCtx.TillTransactionID,
+		UserID:            posCtx.UserID,
+		ItemsPresent:      itemsPresent,
+		Items:             make([]service.CreateOrUpdateSalesInvoiceItem, 0, len(items)),
 		Payments:          make([]service.CreateOrUpdateSalesInvoicePayment, 0, len(body.Payments)),
 	}
 
-	for _, it := range body.Items {
+	for _, it := range items {
 		input.Items = append(input.Items, service.CreateOrUpdateSalesInvoiceItem{
 			ProductID:      it.ProductID,
 			BatchCode:      it.BatchCode,
@@ -76,12 +89,16 @@ func (h *SalesInvoiceHandler) createOrUpdate(c *gin.Context, id *uint64) {
 	}
 	for _, p := range body.Payments {
 		input.Payments = append(input.Payments, service.CreateOrUpdateSalesInvoicePayment{
+			ID:                   p.ID,
 			StorePaymentMethodID: p.StorePaymentMethodID,
 			Amount:               p.Amount,
 			VoucherCode:          p.VoucherCode,
 			IsAdvanceRefund:      p.IsAdvanceRefund,
 		})
 	}
+
+	// zap.L().Info("SPOSCheckPermissionsMiddleware: storeCache", zap.Any("input", input))
+	// os.Exit(0)
 
 	result, err := h.salesInvoiceService.CreateOrUpdate(c.Request.Context(), input)
 	if err != nil {
@@ -95,6 +112,40 @@ func (h *SalesInvoiceHandler) createOrUpdate(c *gin.Context, id *uint64) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "data": result.Data, "message": result.Message})
+}
+
+type posContext struct {
+	StoreID           uint64
+	UserID            uint64
+	DeviceMasterID    *uint64
+	TillID            *uint64
+	TillTransactionID *uint64
+}
+
+func (h *SalesInvoiceHandler) posContext(c *gin.Context) (posContext, bool) {
+	storeID, ok := middleware.POSStoreID(c)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "type": "Bad Request", "message": "Store Not Found"})
+		return posContext{}, false
+	}
+
+	userID, ok := middleware.POSUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "Invalid User Token: Unauthorized"})
+		return posContext{}, false
+	}
+
+	deviceMasterID, _ := middleware.POSDeviceMasterID(c)
+	tillID, _ := middleware.POSTillID(c)
+	tillTransactionID, _ := middleware.POSTillTransactionID(c)
+
+	return posContext{
+		StoreID:           storeID,
+		UserID:            userID,
+		DeviceMasterID:    deviceMasterID,
+		TillID:            tillID,
+		TillTransactionID: tillTransactionID,
+	}, true
 }
 
 func mapCreateSalesInvoiceError(err error) int {

@@ -7,9 +7,24 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SalesInvoiceRoutes(r *gin.RouterGroup, salesInvoiceHandler *handlers.SalesInvoiceHandler, duplicateMW *middleware.DuplicateRequestMiddleware, deviceTokenValidateMiddleware *middleware.DeviceTokenValidateMiddleware, sposCheckPermissionsMiddleware *middleware.SPOSCheckPermissionsMiddleware) {
+func SalesInvoiceRoutes(
+	r *gin.RouterGroup,
+	salesInvoiceHandler *handlers.SalesInvoiceHandler,
+	duplicateMW *middleware.DuplicateRequestMiddleware,
+	deviceTokenValidateMiddleware *middleware.DeviceTokenValidateMiddleware,
+	posAuthTokenValidateMiddleware *middleware.POSAuthTokenValidateMiddleware,
+	mapTillMiddleware *middleware.MapTillMiddleware,
+	sposCheckPermissionsMiddleware *middleware.SPOSCheckPermissionsMiddleware,
+	checkTillStatusMiddleware *middleware.CheckTillStatusMiddleware,
+) {
 	draft := r.Group("/sales/sales-invoice/draft")
-	draft.Use(deviceTokenValidateMiddleware.Handle(), sposCheckPermissionsMiddleware.Handle())
+	draft.Use(
+		deviceTokenValidateMiddleware.Handle(),
+		posAuthTokenValidateMiddleware.Handle(),
+		mapTillMiddleware.Handle(),
+		sposCheckPermissionsMiddleware.Handle(),
+		checkTillStatusMiddleware.Handle(),
+	)
 	draft.POST("/create", duplicateMW.Handle(), salesInvoiceHandler.CreateSalesInvoice)
-	draft.PUT("/:id", salesInvoiceHandler.UpdateSalesInvoice)
+	draft.PUT("/:id", duplicateMW.Handle(), salesInvoiceHandler.UpdateSalesInvoice)
 }

@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-var consoleLoggingEnabled = false
+var consoleLoggingEnabled = true
 
 // ConsoleLoggingEnabled returns whether zap console output is allowed.
 func ConsoleLoggingEnabled() bool {

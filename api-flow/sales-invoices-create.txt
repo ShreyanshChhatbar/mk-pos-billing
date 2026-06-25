@@ -1,34 +1,38 @@
-API: POST /api/v1/sales-invoices/create
+API: POST /api/v1/sales/sales-invoice/draft/create
+API: PUT /api/v1/sales/sales-invoice/draft/{id}
 
 Flow
-1. Validate request body (basic required fields, item/payment shapes).
-2. Start DB transaction.
-3. Load existing draft when `id` is present, otherwise create a new draft object.
-4. Load batch metadata (`batches`) and stock rows (`store_inventories` + `store_batches`) for requested item batches.
-5. Build draft lines:
-   - Use provided `sales_rate` when present, else fallback to batch `mrp`.
-   - Validate available stock against requested quantity.
-   - Compute item bill amount, total amount, discount amount/percentage.
-6. Compute invoice-level draft totals:
-   - total_bill_amount, total_amount, total_discount, total_invoice_amount (rounded), round_off.
-7. Replace draft payments (`sales_invoice_draft_payments`) and compute total_amount_received.
-8. Save draft (`sales_invoice_draft_jsons`) with summary columns + `draft_json` products payload.
-9. If `is_confirmed=false`, return draft details.
-10. If `is_confirmed=true`:
-   - Validate paid amount matches total invoice amount.
-   - Create final invoice row in `sales_invoices`.
-   - Create `sales_invoice_details` from fulfilled batches.
-   - Reduce inventory stock in `store_inventories`.
-   - Copy draft payments into `sales_invoice_payments`.
-   - Mark draft status as `INVOICED`.
-11. Commit transaction and return response.
+1. Validate `device`, `Authorization`, and `store` headers.
+2. Load device, POS user auth, store, and till data from Laravel-compatible cache keys.
+3. Set context fields from middleware: `user_id`, `store_id`, `device_master_id`, `till_id`, `till_transaction_id`.
+4. Check POS permission for `sales` / `sales-invoice` with `CREATE` or `UPDATE`.
+5. Reject missing/closed till; allow stale-day open till only for draft update.
+6. Run duplicate-check for POST and PUT using user/module/submodule key and context-aware request hash.
+7. Bind body and force `organization_id = DEFAULT_ORGANIZATION_ID`.
+8. Validate default-org invoice draft fields, items, narcotics course days, and payments.
+9. Load draft from cache or DB for update, or initialize a new draft for create.
+10. If update omits `items`, clear draft products, preserve/append draft payments, save, cache, and return draft.
+11. If items are present, load batch metadata and valid non-expired stock rows.
+12. Calculate item bill amount, total MRP, discount, invoice total, amount received, and payment status.
+13. Save draft summary columns and `draft_json` products.
+14. Append new draft payments only; existing payment ids are ignored.
+15. If `is_confirmed=false`, return draft details.
+16. If `is_confirmed=true`, validate payment total unless an `ADVANCE_REFUND` payment exists.
+17. Create final invoice, details, and payments; reduce exact `store_batch_id` stock; mark draft `INVOICED`.
+18. Commit transaction and return the invoice id.
 
-Tables used
-- sales_invoice_draft_jsons
-- sales_invoice_draft_payments
-- sales_invoices
-- sales_invoice_details
-- sales_invoice_payments
-- store_inventories
-- store_batches
-- batches
+Failure Branches
+1. Invalid device/user/store/permission/till returns middleware error.
+2. Duplicate POST/PUT returns `429 Duplicate Request Received`.
+3. Invalid route id, body, customer, patient, doctor, product, batch, stock, payment, or passkey returns `400`.
+4. Confirmation with mismatched payment total returns `400`.
+
+Tables Used
+- `sales_invoice_draft_jsons`
+- `sales_invoice_draft_payments`
+- `sales_invoices`
+- `sales_invoice_details`
+- `sales_invoice_payments`
+- `store_inventories`
+- `store_batches`
+- `batches`

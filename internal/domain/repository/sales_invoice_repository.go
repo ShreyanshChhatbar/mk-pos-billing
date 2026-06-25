@@ -83,6 +83,13 @@ func (r *SalesInvoiceRepository) ReplaceDraftPayments(ctx context.Context, draft
 	return r.WithContext(ctx).Create(&payments).Error
 }
 
+func (r *SalesInvoiceRepository) AppendDraftPayments(ctx context.Context, payments []model.SalesInvoiceDraftPayment) error {
+	if len(payments) == 0 {
+		return nil
+	}
+	return r.WithContext(ctx).Create(&payments).Error
+}
+
 func (r *SalesInvoiceRepository) GetDraftPayments(ctx context.Context, draftID uint64) ([]model.SalesInvoiceDraftPayment, error) {
 	var payments []model.SalesInvoiceDraftPayment
 	err := r.WithContext(ctx).
@@ -116,10 +123,10 @@ func (r *SalesInvoiceRepository) MarkDraftInvoiced(ctx context.Context, draftID 
 		Updates(map[string]interface{}{"status": "INVOICED", "updated_by": updatedBy}).Error
 }
 
-func (r *SalesInvoiceRepository) ReduceInventoryStock(ctx context.Context, storeID, productID uint64, batchCode string, quantity int) error {
+func (r *SalesInvoiceRepository) ReduceInventoryStock(ctx context.Context, storeID, productID, storeBatchID uint64, batchCode string, quantity int) error {
 	result := r.WithContext(ctx).
 		Model(&model.StoreInventory{}).
-		Where("store_id = ? AND product_id = ? AND batch_code = ? AND deleted_at IS NULL", storeID, productID, batchCode).
+		Where("store_id = ? AND product_id = ? AND store_batch_id = ? AND batch_code = ? AND closing_stock >= ? AND deleted_at IS NULL", storeID, productID, storeBatchID, batchCode, quantity).
 		Update("closing_stock", gorm.Expr("closing_stock - ?", quantity))
 	if result.Error != nil {
 		return result.Error
@@ -130,7 +137,7 @@ func (r *SalesInvoiceRepository) ReduceInventoryStock(ctx context.Context, store
 	return nil
 }
 
-func (r *SalesInvoiceRepository) FetchBatchStocks(ctx context.Context, storeID uint64, productIDs []uint64, batchCodes []string, ignoreStockCheck bool) (map[string][]BatchStockRow, error) {
+func (r *SalesInvoiceRepository) FetchBatchStocks(ctx context.Context, storeID uint64, productIDs []uint64, batchCodes []string, ignoreStockCheck bool, expiryCutoff time.Time) (map[string][]BatchStockRow, error) {
 	if len(productIDs) == 0 || len(batchCodes) == 0 {
 		return map[string][]BatchStockRow{}, nil
 	}
@@ -145,7 +152,8 @@ func (r *SalesInvoiceRepository) FetchBatchStocks(ctx context.Context, storeID u
 		Where("si.deleted_at IS NULL").
 		Where("si.store_id = ?", storeID).
 		Where("si.product_id IN ?", productIDs).
-		Where("si.batch_code IN ?", batchCodes)
+		Where("si.batch_code IN ?", batchCodes).
+		Where("batches.expiry_date >= ?", expiryCutoff)
 
 	if !ignoreStockCheck {
 		q = q.Where("si.closing_stock > 0")

@@ -1,10 +1,10 @@
 package middleware
 
 import (
-	"fmt"
 	"mk-pos-billing/internal/service"
 	"mk-pos-billing/pkg/response"
 	"net/http"
+	"strings"
 
 	"mk-pos-billing/internal/infrastructure/config"
 
@@ -33,18 +33,16 @@ func (m *DeviceTokenValidateMiddleware) Handle() gin.HandlerFunc {
 			return
 		}
 
-		device_details, err := m.cacheMasterService.GetDeviceCache(c, deviceToken)
-		fmt.Println(device_details)
+		deviceDetails, err := m.cacheMasterService.GetDeviceCache(c, deviceToken)
 
-		if err != nil || device_details == nil {
+		if err != nil || deviceDetails == nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "Device Token is Invalid", "invalid_device_token": true})
 			c.Abort()
 			return
 		}
 
-		isExpired, expiredOk := device_details["is_expired"].(bool)
-		isActive, activeOk := device_details["is_active"].(bool)
-		// Optional: handle missing or invalid types
+		isExpired, expiredOk := toBool(deviceDetails["is_expired"])
+		isActive, activeOk := toBool(deviceDetails["is_active"])
 		if !expiredOk || !activeOk {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
@@ -56,10 +54,21 @@ func (m *DeviceTokenValidateMiddleware) Handle() gin.HandlerFunc {
 
 		if isExpired || !isActive {
 			response.Error(c, http.StatusUnauthorized, "Device is either expired or inactive", map[string]interface{}{
-				"invalid_device_token":      true,
-				"is_active_device_token":    isActive,
-				"is_expired_device_token":   isExpired,
+				"invalid_device_token":    true,
+				"is_active_device_token":  isActive,
+				"is_expired_device_token": isExpired,
 			})
+			c.Abort()
+			return
+		}
+
+		if deviceMasterID, ok := toUint64(deviceDetails["device_id"]); ok {
+			SetPOSDeviceMasterID(c, deviceMasterID)
+		}
+
+		deviceType := strings.ToUpper(toString(deviceDetails["device_type"]))
+		if c.GetHeader("store") == "" && deviceType != "TAB" {
+			c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "Store Not Found"})
 			c.Abort()
 			return
 		}

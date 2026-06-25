@@ -27,21 +27,27 @@ func InitializeServerApp() (*ServerApp, error) {
 	salesInvoiceService := service.NewSalesInvoiceService(salesInvoiceRepo, cacheService, salesCfg)
 	salesInvoiceHandler := handlers.NewSalesInvoiceHandler(salesInvoiceService, salesCfg)
 	duplicateRequestMiddleware := middleware.NewDuplicateRequestMiddleware(cacheService, salesCfg)
-	
+
 	cachePrefixesCfg := cacheCfg.Prefixes
 	cacheTagsCfg := cacheCfg.Tags
 	cacheExpiryCfg := cacheCfg.Expiry
 	cacheMasterService := service.NewCacheMasterService(cacheService, cachePrefixesCfg, cacheTagsCfg, cacheExpiryCfg)
 	deviceTokenValidateMiddleware := middleware.NewDeviceTokenValidateMiddleware(cacheMasterService, cachePrefixesCfg)
+	posAuthTokenValidateMiddleware := middleware.NewPOSAuthTokenValidateMiddleware(cacheMasterService)
+	mapTillMiddleware := middleware.NewMapTillMiddleware(cacheMasterService)
 	sposCheckPermissionsMiddleware := middleware.NewSPOSCheckPermissionsMiddleware(cacheMasterService)
+	checkTillStatusMiddleware := middleware.NewCheckTillStatusMiddleware(cacheMasterService)
 	cacheTestHandler := handlers.NewCacheTestHandler(cacheMasterService)
 
 	return &ServerApp{
 		SalesInvoiceHandler:            salesInvoiceHandler,
 		DuplicateRequestMiddleware:     duplicateRequestMiddleware,
 		DeviceTokenValidateMiddleware:  deviceTokenValidateMiddleware,
+		POSAuthTokenValidateMiddleware: posAuthTokenValidateMiddleware,
+		MapTillMiddleware:              mapTillMiddleware,
 		CacheMasterService:             cacheMasterService,
 		SPOSCheckPermissionsMiddleware: sposCheckPermissionsMiddleware,
+		CheckTillStatusMiddleware:      checkTillStatusMiddleware,
 		CacheTestHandler:               cacheTestHandler,
 	}, nil
 }

@@ -1,8 +1,8 @@
 package routes
 
 import (
-	"mk-pos-billing/internal/api/handlers"
 	"github.com/gin-gonic/gin"
+	"mk-pos-billing/internal/api/handlers"
 )
 
 func TestRoutes(r *gin.RouterGroup, CacheTestHandler *handlers.CacheTestHandler) {

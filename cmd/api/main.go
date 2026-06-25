@@ -90,7 +90,10 @@ func runServer() {
 	routes.RegisterAllRoutes(r, routes.RouteConfig{
 		DuplicateRequestMiddleware:     app.DuplicateRequestMiddleware,
 		DeviceTokenValidateMiddleware:  app.DeviceTokenValidateMiddleware,
+		POSAuthTokenValidateMiddleware: app.POSAuthTokenValidateMiddleware,
+		MapTillMiddleware:              app.MapTillMiddleware,
 		SPOSCheckPermissionsMiddleware: app.SPOSCheckPermissionsMiddleware,
+		CheckTillStatusMiddleware:      app.CheckTillStatusMiddleware,
 		SalesInvoiceHandler:            app.SalesInvoiceHandler,
 		CacheTestHandler:               app.CacheTestHandler,
 	})

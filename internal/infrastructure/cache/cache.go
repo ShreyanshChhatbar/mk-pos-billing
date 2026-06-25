@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -67,6 +68,10 @@ func (s *Service) Set(ctx context.Context, key string, value interface{}, ttl ti
 	return s.client.Set(ctx, key, value, ttl).Err()
 }
 
+func (s *Service) Add(ctx context.Context, key string, value interface{}, ttl time.Duration) (bool, error) {
+	return s.client.SetNX(ctx, key, value, ttl).Result()
+}
+
 func (s *Service) Get(ctx context.Context, key string) (string, error) {
 	return s.client.Get(ctx, key).Result()
 }
@@ -101,7 +106,7 @@ func (s *Service) GetJSON(ctx context.Context, key string, dest interface{}) err
 		case 'a', 'O': // Array or Object
 			m, err := phpserialize.UnmarshalAssociativeArray(data)
 			if err == nil {
-				raw = phpserialize.StringifyKeys(m)
+				raw = phpValueToJSONCompatible(m)
 			} else {
 				phpErr = err
 			}
@@ -130,26 +135,100 @@ func (s *Service) GetJSON(ctx context.Context, key string, dest interface{}) err
 	return json.Unmarshal(data, dest)
 }
 
-// convertToStringMap recursively converts map[interface{}]interface{} to map[string]interface{}
-// This is necessary because the JSON marshaler complains about map[interface{}] keys
-func convertToStringMap(m map[interface{}]interface{}) map[string]interface{} {
-	res := make(map[string]interface{})
-	for k, v := range m {
-		keyStr := fmt.Sprintf("%v", k)
+// phpValueToJSONCompatible converts phpserialize output into values that can be
+// safely marshaled to JSON without losing array shape or panicking on non-string keys.
+func phpValueToJSONCompatible(value interface{}) interface{} {
+	switch v := value.(type) {
+	case map[interface{}]interface{}:
+		return phpMapToJSONCompatible(v)
+	case []interface{}:
+		out := make([]interface{}, len(v))
+		for i, elem := range v {
+			out[i] = phpValueToJSONCompatible(elem)
+		}
+		return out
+	default:
+		return value
+	}
+}
 
-		switch val := v.(type) {
-		case map[interface{}]interface{}:
-			res[keyStr] = convertToStringMap(val)
-		case []interface{}:
-			for i, elem := range val {
-				if mElem, ok := elem.(map[interface{}]interface{}); ok {
-					val[i] = convertToStringMap(mElem)
-				}
+func phpMapToJSONCompatible(m map[interface{}]interface{}) interface{} {
+	if len(m) == 0 {
+		return map[string]interface{}{}
+	}
+
+	indexes := make([]int, 0, len(m))
+	indexedValues := make(map[int]interface{}, len(m))
+
+	for k, v := range m {
+		index, ok := phpArrayIndex(k)
+		if !ok {
+			result := make(map[string]interface{}, len(m))
+			for key, val := range m {
+				result[fmt.Sprint(key)] = phpValueToJSONCompatible(val)
 			}
-			res[keyStr] = val
-		default:
-			res[keyStr] = v
+			return result
+		}
+
+		indexes = append(indexes, index)
+		indexedValues[index] = phpValueToJSONCompatible(v)
+	}
+
+	sort.Ints(indexes)
+	for i, index := range indexes {
+		if index != i {
+			result := make(map[string]interface{}, len(m))
+			for key, val := range m {
+				result[fmt.Sprint(key)] = phpValueToJSONCompatible(val)
+			}
+			return result
 		}
 	}
-	return res
+
+	out := make([]interface{}, len(m))
+	for index, value := range indexedValues {
+		out[index] = value
+	}
+	return out
+}
+
+func phpArrayIndex(key interface{}) (int, bool) {
+	maxInt := int(^uint(0) >> 1)
+
+	switch v := key.(type) {
+	case int:
+		return v, v >= 0
+	case int8:
+		return int(v), v >= 0
+	case int16:
+		return int(v), v >= 0
+	case int32:
+		return int(v), v >= 0
+	case int64:
+		if v < 0 || v > int64(maxInt) {
+			return 0, false
+		}
+		return int(v), true
+	case uint:
+		if v > uint(maxInt) {
+			return 0, false
+		}
+		return int(v), true
+	case uint8:
+		return int(v), true
+	case uint16:
+		return int(v), true
+	case uint32:
+		if uint64(v) > uint64(maxInt) {
+			return 0, false
+		}
+		return int(v), true
+	case uint64:
+		if v > uint64(maxInt) {
+			return 0, false
+		}
+		return int(v), true
+	default:
+		return 0, false
+	}
 }
