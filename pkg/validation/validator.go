@@ -1,7 +1,7 @@
 package validation
 
 import (
-	"mk-pos-billing/pkg/constants"
+	// "mk-pos-billing/pkg/constants"
 	"mk-pos-billing/pkg/utils"
 	"net/http"
 	"reflect"
@@ -17,49 +17,14 @@ var validate = validator.New()
 
 func init() {
 	// Register custom validators
-	validate.RegisterValidation("escalation_type", validateEscalationType)
-	validate.RegisterValidation("frequency_type", validateFrequencyType)
-	validate.RegisterValidation("schedule_type", validateScheduleType)
-	validate.RegisterValidation("assignable_type", validateAssignableType)
-	validate.RegisterValidation("flag_status", validateFlagStatus)
-	validate.RegisterValidation("task_priority", validateTaskPriority)
+	// validate.RegisterValidation("escalation_type", validateEscalationType)
 }
 
 // validateEscalationType validates if the value is a valid EscalationType
-func validateEscalationType(fl validator.FieldLevel) bool {
-	value := fl.Field().String()
-	return constants.IsValidEnum(value, constants.AllEscalationTypes...)
-}
-
-// validateFrequencyType validates if the value is a valid FrequencyType
-func validateFrequencyType(fl validator.FieldLevel) bool {
-	value := fl.Field().String()
-	return constants.IsValidEnum(value, constants.AllFrequencyTypes...)
-}
-
-// validateScheduleType validates if the value is a valid ScheduleType
-func validateScheduleType(fl validator.FieldLevel) bool {
-	value := fl.Field().String()
-	return constants.IsValidEnum(value, constants.AllScheduleTypes...)
-}
-
-// validateAssignableType validates if the value is a valid AssignableType
-func validateAssignableType(fl validator.FieldLevel) bool {
-	value := fl.Field().String()
-	return constants.IsValidEnum(value, constants.AllAssignableTypes...)
-}
-
-// validateFlagStatus validates if the value is a valid FlagStatus
-func validateFlagStatus(fl validator.FieldLevel) bool {
-	value := fl.Field().String()
-	return constants.IsValidEnum(value, constants.AllFlagStatuses...)
-}
-
-// validateTaskPriority validates if the value is a valid TaskPriority
-func validateTaskPriority(fl validator.FieldLevel) bool {
-	value := fl.Field().String()
-	return constants.IsValidEnum(value, constants.AllTaskPriorities...)
-}
+// func validateEscalationType(fl validator.FieldLevel) bool {
+// 	value := fl.Field().String()
+// 	return constants.IsValidEnum(value, constants.AllEscalationTypes...)
+// }
 
 func Validate[U any, Q any, B any]() gin.HandlerFunc {
 	return func(c *gin.Context) {

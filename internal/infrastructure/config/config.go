@@ -71,16 +71,22 @@ func envStringOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
-func envIntOrDefault(key, defaultValue string) int {
+func envIntOrDefault(key string, defaultValue int) int {
 	if val := os.Getenv(key); val != "" {
 		if i, err := strconv.Atoi(val); err == nil {
 			return i
 		}
 	}
-	if i, err := strconv.Atoi(defaultValue); err == nil {
-		return i
+	return defaultValue
+}
+
+func envUint64OrDefault(key string, defaultValue uint64) uint64 {
+	if val := os.Getenv(key); val != "" {
+		if i, err := strconv.ParseUint(val, 10, 64); err == nil {
+			return i
+		}
 	}
-	return 0
+	return defaultValue
 }
 
 // slugify simulates Laravel's Str::slug with an underscore separator
@@ -198,13 +204,13 @@ func loadCacheTags() CacheTags {
 
 func loadCacheExpiry() CacheExpiry {
 	return CacheExpiry{
-		TillHours:                  envIntOrDefault("TILL_CACHE_EXPIRY", "12"),
-		PosAuthHours:               envIntOrDefault("POS_AUTH_CACHE_DURATION_HOURS", "12"),
-		DuplicateCheckSeconds:      envIntOrDefault("DUPLICATE_REQUEST_CHECK_EXPIRY_IN_SECONDS", "10"),
-		OngcPrescriptionHours:      envIntOrDefault("ONGC_PRESCRIPTION_CACHE_EXPIRY_HOURS", "24"),
-		DraftPaymentDeleteSeconds:  envIntOrDefault("DRAFT_PAYMENT_DELETE_CACHE_EXPIRY_SECONDS", "5"),
-		ScreenLinkMinutes:          envIntOrDefault("SCREEN_LINK_CACHE_EXPIRY_MINUTES", "10"),
-		ProductImageHours:          envIntOrDefault("PRODUCT_IMAGE_CACHE_EXPIRY_HOURS", "18"),
-		OngcLoginRefreshTokenHours: envIntOrDefault("ONGC_LOGIN_REFRESH_TOKEN_CACHE_EXPIRY_HOURS", "720"),
+		TillHours:                  envIntOrDefault("TILL_CACHE_EXPIRY", 12),
+		PosAuthHours:               envIntOrDefault("POS_AUTH_CACHE_DURATION_HOURS", 12),
+		DuplicateCheckSeconds:      envIntOrDefault("DUPLICATE_REQUEST_CHECK_EXPIRY_IN_SECONDS", 10),
+		OngcPrescriptionHours:      envIntOrDefault("ONGC_PRESCRIPTION_CACHE_EXPIRY_HOURS", 24),
+		DraftPaymentDeleteSeconds:  envIntOrDefault("DRAFT_PAYMENT_DELETE_CACHE_EXPIRY_SECONDS", 5),
+		ScreenLinkMinutes:          envIntOrDefault("SCREEN_LINK_CACHE_EXPIRY_MINUTES", 10),
+		ProductImageHours:          envIntOrDefault("PRODUCT_IMAGE_CACHE_EXPIRY_HOURS", 18),
+		OngcLoginRefreshTokenHours: envIntOrDefault("ONGC_LOGIN_REFRESH_TOKEN_CACHE_EXPIRY_HOURS", 720),
 	}
 }

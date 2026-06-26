@@ -42,5 +42,5 @@ type CreateOrUpdatePayment struct {
 }
 
 type UpdateSalesInvoiceURI struct {
-	ID uint64 `uri:"id"`
+	ID uint64 `uri:"id" binding:"required"`
 }

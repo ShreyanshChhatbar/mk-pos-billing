@@ -10,30 +10,16 @@ import (
 	"mk-pos-billing/internal/domain/repository"
 	"mk-pos-billing/internal/infrastructure/cache"
 	"mk-pos-billing/internal/infrastructure/config"
-	"os"
+	"mk-pos-billing/pkg/constants"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 var ErrValidation = errors.New("validation error")
-
-const (
-	salesInvoiceStatusDraft          = "DRAFT"
-	salesInvoiceStatusPaymentPending = "PAYMENT_PENDING"
-	salesInvoiceStatusInvoiced       = "INVOICED"
-
-	salesPaymentStatusDraft         = "DRAFT"
-	salesPaymentStatusPartiallyPaid = "PARTIALLY_PAID"
-	salesPaymentStatusFullyPaid     = "FULLY_PAID"
-
-	salesPaymentTypeSales         = "SALES"
-	salesPaymentTypeAdvanceRefund = "ADVANCE_REFUND"
-)
 
 type CreateOrUpdateSalesInvoiceInput struct {
 	ID                *uint64
@@ -378,7 +364,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		}
 
 		// cache final state as draft slot with updated status
-		draft.Status = salesInvoiceStatusInvoiced
+		draft.Status = constants.SalesInvoiceStatusInvoiced
 		cacheData.SalesInvoiceDraft = *draft
 		_ = s.cache.SetJSON(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
 
@@ -604,7 +590,7 @@ func (s *SalesInvoiceService) finalizeInvoice(
 		CustomerAddressID:     draft.CustomerAddressID,
 		DoctorID:              draft.DoctorID,
 		PatientID:             draft.PatientID,
-		OrderType:             salesPaymentTypeSales,
+		OrderType:             constants.SalesPaymentTypeSales,
 		IsHomeDelivery:        draft.IsHomeDelivery,
 		TotalBillAmount:       draft.TotalBillAmount,
 		TaxableAmount:         draft.TaxableAmount,
@@ -841,10 +827,10 @@ func buildDraftPayments(input CreateOrUpdateSalesInvoiceInput, draftID uint64) (
 			continue
 		}
 		amount := round2(p.Amount)
-		ptype := salesPaymentTypeSales
+		ptype := constants.SalesPaymentTypeSales
 		if p.IsAdvanceRefund {
 			amount = -amount
-			ptype = salesPaymentTypeAdvanceRefund
+			ptype = constants.SalesPaymentTypeAdvanceRefund
 		} else {
 			totalReceived += amount
 		}
@@ -867,7 +853,7 @@ func buildDraftPayments(input CreateOrUpdateSalesInvoiceInput, draftID uint64) (
 func totalReceivedFromDraftPayments(payments []model.SalesInvoiceDraftPayment) float64 {
 	total := 0.0
 	for _, payment := range payments {
-		if payment.Type == salesPaymentTypeAdvanceRefund {
+		if payment.Type == constants.SalesPaymentTypeAdvanceRefund {
 			continue
 		}
 		total += payment.Amount
@@ -877,7 +863,7 @@ func totalReceivedFromDraftPayments(payments []model.SalesInvoiceDraftPayment) f
 
 func hasAdvanceRefundPayment(payments []model.SalesInvoiceDraftPayment) bool {
 	for _, payment := range payments {
-		if payment.Type == salesPaymentTypeAdvanceRefund {
+		if payment.Type == constants.SalesPaymentTypeAdvanceRefund {
 			return true
 		}
 	}
@@ -886,9 +872,9 @@ func hasAdvanceRefundPayment(payments []model.SalesInvoiceDraftPayment) bool {
 
 func resolveDraftStatus(hasPayments bool) string {
 	if hasPayments {
-		return salesInvoiceStatusPaymentPending
+		return constants.SalesInvoiceStatusPaymentPending
 	}
-	return salesInvoiceStatusDraft
+	return constants.SalesInvoiceStatusDraft
 }
 
 func resolvePaymentStatus(totalReceived, invoiceTotal float64) string {
@@ -896,11 +882,11 @@ func resolvePaymentStatus(totalReceived, invoiceTotal float64) string {
 	invoiceTotal = round2(invoiceTotal)
 	switch {
 	case totalReceived == 0:
-		return salesPaymentStatusDraft
+		return constants.SalesPaymentStatusDraft
 	case totalReceived >= invoiceTotal:
-		return salesPaymentStatusFullyPaid
+		return constants.SalesPaymentStatusFullyPaid
 	default:
-		return salesPaymentStatusPartiallyPaid
+		return constants.SalesPaymentStatusPartiallyPaid
 	}
 }
 
