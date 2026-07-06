@@ -17,7 +17,7 @@ type CreateOrUpdateSalesInvoiceRequest struct {
 	DeviceMasterID    *uint64                      `json:"device_master_id" binding:"omitempty,gt=0"`
 	TillID            *uint64                      `json:"till_id" binding:"omitempty,gt=0"`
 	TillTransactionID *uint64                      `json:"till_transaction_id" binding:"omitempty,gt=0"`
-	Items             []CreateOrUpdateInvoiceItem  `json:"items"`
+	Items             *[]CreateOrUpdateInvoiceItem `json:"items"`
 	Payments          []CreateOrUpdatePayment      `json:"payments"`
 }
 

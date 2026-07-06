@@ -189,18 +189,18 @@ func SendErrorResponse(c *gin.Context, req interface{}, err error) {
 
 	if ve, ok := err.(validator.ValidationErrors); ok {
 		errors := formatValidationError(req, ve)
-		c.AbortWithStatusJSON(http.StatusUnprocessableEntity, utils.APIResponse{
+		c.AbortWithStatusJSON(http.StatusBadRequest, utils.APIResponse{
 			Success:    false,
-			StatusCode: http.StatusUnprocessableEntity,
+			StatusCode: http.StatusBadRequest,
 			Message:    "Validation failed",
 			Errors:     errors,
 		})
 		return
 	}
 
-	c.AbortWithStatusJSON(http.StatusUnprocessableEntity, utils.APIResponse{
+	c.AbortWithStatusJSON(http.StatusBadRequest, utils.APIResponse{
 		Success:    false,
-		StatusCode: http.StatusUnprocessableEntity,
+		StatusCode: http.StatusBadRequest,
 		Message:    "Invalid request format",
 		Errors:     gin.H{"error": err.Error()},
 	})

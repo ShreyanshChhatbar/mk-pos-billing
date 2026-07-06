@@ -13,7 +13,6 @@ import (
 	"mk-pos-billing/pkg/constants"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -201,8 +200,23 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 					return err
 				}
 			}
-			emptyPayload := salesInvoiceDraftJSONPayload{Products: []draftProductJSON{}}
-			raw, _ := json.Marshal(emptyPayload)
+			var draftPayload salesInvoiceDraftJSONPayload
+			if len(draft.DraftJSON) > 0 {
+				_ = json.Unmarshal(draft.DraftJSON, &draftPayload)
+			}
+			draftPayload.Products = []draftProductJSON{}
+			draftPayload.TotalProducts = 0
+			draftPayload.TotalItems = 0
+			draftPayload.TotalQuantity = 0
+			draftPayload.TotalGST = 0
+			draftPayload.SGST = 0
+			draftPayload.CGST = 0
+			draftPayload.IGST = 0
+			draftPayload.DeliveryCharges = 0
+			draftPayload.TaxableAmount = 0
+			draftPayload.RoundOff = 0
+
+			raw, _ := json.Marshal(draftPayload)
 			draft.DraftJSON = raw
 			draft.TotalProducts = 0
 			draft.TotalItems = 0
