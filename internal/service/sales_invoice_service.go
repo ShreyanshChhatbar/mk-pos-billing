@@ -379,22 +379,13 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 }
 
 func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrUpdateSalesInvoiceInput) error {
-	if input.IsConfirmed == nil {
-		return errors.New("is_confirmed is required")
-	}
-	if input.BillingUserID == 0 || !s.repo.ExistsActiveUser(ctx, input.BillingUserID) {
+	if !s.repo.ExistsActiveUser(ctx, input.BillingUserID) {
 		return errors.New("billing_user_id is invalid")
-	}
-	if input.StoreID == 0 {
-		return errors.New("store_id is required")
-	}
-	if input.UserID == 0 {
-		return errors.New("user_id is required")
 	}
 
 	hasPayments := len(input.Payments) > 0
 	if derefBool(input.IsConfirmed) || hasPayments {
-		if input.CustomerID == nil || *input.CustomerID == 0 || !s.repo.ExistsActiveCustomer(ctx, *input.CustomerID) {
+		if input.CustomerID == nil || !s.repo.ExistsActiveCustomer(ctx, *input.CustomerID) {
 			return errors.New("customer_id is invalid")
 		}
 	}
@@ -428,18 +419,10 @@ func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrU
 
 	productIDs := make([]uint64, 0, len(input.Items))
 	for i, item := range input.Items {
-		if item.ProductID == 0 {
-			return errors.New("items." + strconv.Itoa(i) + ".product_id is required")
-		}
-		if strings.TrimSpace(item.BatchCode) == "" {
-			return errors.New("items." + strconv.Itoa(i) + ".batch_code is required")
-		}
 		if s.cfg.BatchCodeLength > 0 && len(item.BatchCode) > s.cfg.BatchCodeLength {
 			return errors.New("items." + strconv.Itoa(i) + ".batch_code length is invalid")
 		}
-		if item.Quantity <= 0 {
-			return errors.New("items." + strconv.Itoa(i) + ".quantity must be > 0")
-		}
+
 		if !s.repo.ExistsActiveProduct(ctx, item.ProductID) {
 			return errors.New("items." + strconv.Itoa(i) + ".product_id is invalid")
 		}
@@ -468,18 +451,12 @@ func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrU
 	}
 
 	if derefBool(input.IsConfirmed) && s.repo.HasNarcoticsProduct(ctx, productIDs, s.cfg.NarcoticsProductScheduledType) {
-		if input.CourseDays == nil || *input.CourseDays <= 0 {
+		if input.CourseDays == nil {
 			return errors.New("course_days is required for narcotics products")
 		}
 	}
 
 	for i, p := range input.Payments {
-		if p.StorePaymentMethodID == 0 {
-			return errors.New("payments." + strconv.Itoa(i) + ".store_payment_method_id is required")
-		}
-		if p.Amount <= 0 {
-			return errors.New("payments." + strconv.Itoa(i) + ".amount must be > 0")
-		}
 		if !s.repo.ExistsStorePaymentMethod(ctx, p.StorePaymentMethodID, input.StoreID, input.OrganizationID) {
 			return errors.New("payments." + strconv.Itoa(i) + ".store_payment_method_id is invalid")
 		}
@@ -491,7 +468,6 @@ func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrU
 
 	return nil
 }
-
 func (s *SalesInvoiceService) loadOrCreateDraft(ctx context.Context, repo *repository.SalesInvoiceRepository, input CreateOrUpdateSalesInvoiceInput, cachedData *draftCacheData) (*model.SalesInvoiceDraftJSON, error) {
 	if cachedData != nil && cachedData.SalesInvoiceDraft.ID != 0 {
 		draft := cachedData.SalesInvoiceDraft

@@ -6,6 +6,7 @@ import (
 	"mk-pos-billing/internal/api/request"
 	"mk-pos-billing/internal/infrastructure/config"
 	"mk-pos-billing/internal/service"
+	"mk-pos-billing/pkg/validation"
 	"net/http"
 	"strconv"
 
@@ -36,11 +37,7 @@ func (h *SalesInvoiceHandler) UpdateSalesInvoice(c *gin.Context) {
 }
 
 func (h *SalesInvoiceHandler) createOrUpdate(c *gin.Context, id *uint64) {
-	var body request.CreateOrUpdateSalesInvoiceRequest
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "type": "Bad Request", "message": "Validation Error", "errors": gin.H{"body": err.Error()}})
-		return
-	}
+	body := validation.GetValidBodyData[request.CreateOrUpdateSalesInvoiceRequest](c)
 
 	posCtx, ok := h.posContext(c)
 	if !ok {

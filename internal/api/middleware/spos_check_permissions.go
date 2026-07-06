@@ -27,11 +27,11 @@ func NewSPOSCheckPermissionsMiddleware(cacheMaster service.CacheMasterService) *
 func getOperation(method string) string {
 	switch strings.ToUpper(method) {
 	case http.MethodGet:
-		return "READ"
+		return "LIST"
 	case http.MethodPost:
-		return "CREATE"
+		return "ADD"
 	case http.MethodPut, http.MethodPatch:
-		return "UPDATE"
+		return "EDIT"
 	case http.MethodDelete:
 		return "DELETE"
 	default:
