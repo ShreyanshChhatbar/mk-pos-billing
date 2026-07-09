@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"fmt"
 	// "go/printer"
 	"mk-pos-billing/internal/service"
 	"net/http"
@@ -59,7 +58,7 @@ func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 		storeCache, err := m.cacheMaster.GetStoreCache(c.Request.Context(), int(storeID), false)
 		// print("storeCache", storeCache)
 		zap.L().Info("SPOSCheckPermissionsMiddleware: storeCache", zap.Any("storeCache", storeCache), zap.Uint64("storeID", storeID))
-		if err != nil || len(storeCache) == 0 {
+		if err != nil || storeCache == nil {
 			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "type": "Bad Request", "message": "Invalid Store"})
 			c.Abort()
 			return
@@ -81,13 +80,13 @@ func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 				c.Abort()
 				return
 			}
-			if len(userCacheMaster) == 0 {
+			if userCacheMaster == nil {
 				response.Error(c, http.StatusUnauthorized, "Unauthorized, you don`t have any permissions")
 				c.Abort()
 				return
 			}
-			userID, userOK = toUint64(userCacheMaster["user_id"])
-			permissions, permsOK = userCacheMaster["permissions"].(map[string]interface{})
+			userID, userOK = uint64(userCacheMaster.UserID), true
+			permissions, permsOK = userCacheMaster.Permissions, true
 		}
 
 		if !userOK || len(permissions) == 0 {
@@ -108,16 +107,7 @@ func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 			return
 		}
 
-		modulePermsMap, ok := modulePerms.(map[string]interface{})
-		if !ok {
-			response.MiddlewareError(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, You don't have access to this module format!", map[string]interface{}{
-				"is_permission_required": true,
-			})
-			c.Abort()
-			return
-		}
-
-		subModulePerms, hasSubModule := modulePermsMap[subModule]
+		subModuleActions, hasSubModule := modulePerms[subModule]
 		if !hasSubModule {
 			response.MiddlewareError(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, You don't have access to this sub-module!", map[string]interface{}{
 				"is_permission_required": true,
@@ -126,14 +116,7 @@ func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 			return
 		}
 
-		hasOperation, validActionList := hasAction(subModulePerms, operation)
-		if !validActionList {
-			response.MiddlewareError(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, Invalid sub-module permissions format!", map[string]interface{}{
-				"is_permission_required": true,
-			})
-			c.Abort()
-			return
-		}
+		hasOperation := hasAction(subModuleActions, operation)
 		zap.L().Info("SPOSCheckPermissionsMiddleware: permissionsCheck", zap.Any("module", module), zap.Any("subModule", subModule), zap.Any("operation", operation), zap.Any("hasOperation", hasOperation), zap.Any("approvalPermission", approvalPermission))
 		if !hasOperation {
 			response.MiddlewareError(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, You don't have access to this action!", map[string]interface{}{
@@ -143,7 +126,7 @@ func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 			return
 		}
 
-		hasApprove, _ := hasAction(subModulePerms, "APPROVE")
+		hasApprove := hasAction(subModuleActions, "APPROVE")
 		if approvalPermission == "approve" && !hasApprove {
 			response.MiddlewareError(c, http.StatusUnauthorized, "Unauthorized", "Unauthorized, You don't have access to this action!", map[string]interface{}{
 				"is_permission_required": true,
@@ -171,22 +154,11 @@ func laravelSegments(path string) (string, string, string) {
 	return segment(3), segment(4), segment(5)
 }
 
-func hasAction(actions interface{}, expected string) (bool, bool) {
-	switch list := actions.(type) {
-	case []interface{}:
-		for _, action := range list {
-			if fmt.Sprint(action) == expected {
-				return true, true
-			}
+func hasAction(actions []string, expected string) bool {
+	for _, action := range actions {
+		if action == expected {
+			return true
 		}
-		return false, true
-	case []string:
-		for _, action := range list {
-			if action == expected {
-				return true, true
-			}
-		}
-		return false, true
 	}
-	return false, false
+	return false
 }

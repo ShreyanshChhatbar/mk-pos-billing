@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"mk-pos-billing/internal/domain/model"
 	"mk-pos-billing/internal/infrastructure/cache"
 	"mk-pos-billing/internal/infrastructure/config"
 
@@ -11,12 +12,12 @@ import (
 
 // Define the interface
 type CacheMasterService interface {
-	GetTillCache(ctx context.Context, storeID int, dbFallback bool) (map[string]interface{}, error)
-	GetUserAuthCache(ctx context.Context, token string) (map[string]interface{}, error)
-	GetStoreCache(ctx context.Context, storeID int, dbFallback bool) (map[string]interface{}, error)
-	GetUserCache(ctx context.Context, userID int, dbFallback bool) (map[string]interface{}, error)
-	GetDeviceCache(ctx context.Context, deviceToken string) (map[string]interface{}, error)
-	GetProductCache(ctx context.Context, productID int) (map[string]interface{}, error)
+	GetTillCache(ctx context.Context, storeID int, dbFallback bool) (*model.TillCache, error)
+	GetUserAuthCache(ctx context.Context, token string) (*model.UserAuthCache, error)
+	GetStoreCache(ctx context.Context, storeID int, dbFallback bool) (*model.StoreCache, error)
+	GetUserCache(ctx context.Context, userID int, dbFallback bool) (*model.UserCache, error)
+	GetDeviceCache(ctx context.Context, deviceToken string) (*model.DeviceCache, error)
+	GetProductCache(ctx context.Context, productID int) (*model.ProductCache, error)
 }
 
 // Ensure implementation
@@ -39,14 +40,14 @@ func NewCacheMasterService(cacheSvc *cache.Service, prefixes config.CachePrefixe
 }
 
 // GetTillCache mimics the Laravel getTillCache function
-func (s *cacheMasterService) GetTillCache(ctx context.Context, storeID int, dbFallback bool) (map[string]interface{}, error) {
+func (s *cacheMasterService) GetTillCache(ctx context.Context, storeID int, dbFallback bool) (*model.TillCache, error) {
 	// The Laravel code uses cache tags, which go-redis handles differently (often via sets),
 	// but mapping to a simple string key approach is standard in basic Redis structures.
 	// Use BuildTaggedKey to handle Laravel's cache tagging (prepending the version hash)
 	cacheKey := s.cacheSvc.BuildTaggedKey(ctx, s.tags.Till, s.prefixes.Till, fmt.Sprint(storeID))
 
-	var tillData map[string]interface{}
-	err := s.cacheSvc.GetJSON(ctx, cacheKey, &tillData)
+	var tillData model.TillCache
+	err := s.cacheSvc.GetPHPSerialized(ctx, cacheKey, &tillData)
 	if err != nil {
 		// Cache miss
 		if dbFallback {
@@ -58,21 +59,21 @@ func (s *cacheMasterService) GetTillCache(ctx context.Context, storeID int, dbFa
 		return nil, err
 	}
 
-	return tillData, nil
+	return &tillData, nil
 }
 
 // GetUserAuthCache mimics the Laravel getUserAuthCache function
-func (s *cacheMasterService) GetUserAuthCache(ctx context.Context, token string) (map[string]interface{}, error) {
+func (s *cacheMasterService) GetUserAuthCache(ctx context.Context, token string) (*model.UserAuthCache, error) {
 	userCacheKey := s.cacheSvc.BuildKey(s.prefixes.PosAuthUser, token)
 
 	var findUserCache struct {
 		ID int `json:"id"`
 	}
-	err := s.cacheSvc.GetJSON(ctx, userCacheKey, &findUserCache)
+	err := s.cacheSvc.GetPHPSerialized(ctx, userCacheKey, &findUserCache)
 	if err != nil {
 		var userID int
-		if rawErr := s.cacheSvc.GetJSON(ctx, userCacheKey, &userID); rawErr != nil || userID == 0 {
-			return map[string]interface{}{}, nil
+		if rawErr := s.cacheSvc.GetPHPSerialized(ctx, userCacheKey, &userID); rawErr != nil || userID == 0 {
+			return nil, nil
 		}
 		findUserCache.ID = userID
 	}
@@ -80,45 +81,19 @@ func (s *cacheMasterService) GetUserAuthCache(ctx context.Context, token string)
 	userID := findUserCache.ID
 
 	userDetailsKey := s.cacheSvc.BuildKey(s.prefixes.PosAuthToken, fmt.Sprint(userID))
-	var userDetails map[string]interface{}
+	var userDetails model.UserAuthCache
 	// Note: We ignore the error here because the Laravel logic checks for keys inside array
 	// (it does not return empty automatically if user details are missing).
-	_ = s.cacheSvc.GetJSON(ctx, userDetailsKey, &userDetails)
+	_ = s.cacheSvc.GetPHPSerialized(ctx, userDetailsKey, &userDetails)
 
-	// Reconstruct the response map
-	result := map[string]interface{}{
-		"user_id": userID,
-	}
+	// Ensure userID is set from the index lookup since it's the anchor
+	userDetails.UserID = userID
 
-	if authToken, ok := userDetails["auth_token"].(string); ok {
-		result["auth_token"] = authToken
-	} else {
-		result["auth_token"] = ""
-	}
-
-	if deviceToken, ok := userDetails["device_token"].(string); ok {
-		result["device_token"] = deviceToken
-	} else {
-		result["device_token"] = ""
-	}
-
-	if storeId, ok := numberFromAny(userDetails["store_id"]); ok {
-		result["store_id"] = storeId
-	} else {
-		result["store_id"] = ""
-	}
-
-	if permissions, ok := userDetails["permissions"]; ok && permissions != nil {
-		result["permissions"] = permissions
-	} else {
-		result["permissions"] = []string{}
-	}
-
-	return result, nil
+	return &userDetails, nil
 }
 
 // GetStoreCache mimics the Laravel getStoreCache function
-func (s *cacheMasterService) GetStoreCache(ctx context.Context, storeID int, dbFallback bool) (map[string]interface{}, error) {
+func (s *cacheMasterService) GetStoreCache(ctx context.Context, storeID int, dbFallback bool) (*model.StoreCache, error) {
 	if storeID == 0 {
 		return nil, nil // Equivalant to Laravel return null
 	}
@@ -126,8 +101,8 @@ func (s *cacheMasterService) GetStoreCache(ctx context.Context, storeID int, dbF
 	// Use BuildTaggedKey to handle Laravel's cache tagging (prepending the version hash)
 	cacheKey := s.cacheSvc.BuildTaggedKey(ctx, s.tags.Store, s.prefixes.Store, fmt.Sprint(storeID))
 
-	var storeData map[string]interface{}
-	err := s.cacheSvc.GetJSON(ctx, cacheKey, &storeData)
+	var storeData model.StoreCache
+	err := s.cacheSvc.GetPHPSerialized(ctx, cacheKey, &storeData)
 	zap.L().Info("SPOSCheckPermissionsMiddleware: storeCache", zap.Any("cacheKey", cacheKey), zap.Any("err", err))
 
 	if err != nil {
@@ -139,28 +114,15 @@ func (s *cacheMasterService) GetStoreCache(ctx context.Context, storeID int, dbF
 		return nil, nil
 	}
 
-	// Array column transformation for product categories discounts
-	if discounts, ok := storeData["product_categories_discounts"].([]interface{}); ok && len(discounts) > 0 {
-		mappedDiscounts := make(map[string]interface{})
-		for _, v := range discounts {
-			if discountItem, ok := v.(map[string]interface{}); ok {
-				if catID, exists := discountItem["category_id"]; exists {
-					mappedDiscounts[fmt.Sprint(catID)] = discountItem
-				}
-			}
-		}
-		storeData["product_categories_discounts"] = mappedDiscounts
-	}
-
-	return storeData, nil
+	return &storeData, nil
 }
 
 // GetUserCache mimics the Laravel getUserCache function
-func (s *cacheMasterService) GetUserCache(ctx context.Context, userID int, dbFallback bool) (map[string]interface{}, error) {
+func (s *cacheMasterService) GetUserCache(ctx context.Context, userID int, dbFallback bool) (*model.UserCache, error) {
 	cacheKey := s.cacheSvc.BuildKey(s.prefixes.User, fmt.Sprint(userID))
 
-	var userData map[string]interface{}
-	err := s.cacheSvc.GetJSON(ctx, cacheKey, &userData)
+	var userData model.UserCache
+	err := s.cacheSvc.GetPHPSerialized(ctx, cacheKey, &userData)
 
 	if err != nil || dbFallback {
 		// Either cache miss or forced db fallback
@@ -171,33 +133,22 @@ func (s *cacheMasterService) GetUserCache(ctx context.Context, userID int, dbFal
 		return nil, err
 	}
 
-	return userData, nil
+	return &userData, nil
 }
 
 // GetDeviceCache mimics the Laravel getDeviceCache function
-func (s *cacheMasterService) GetDeviceCache(ctx context.Context, deviceToken string) (map[string]interface{}, error) {
+func (s *cacheMasterService) GetDeviceCache(ctx context.Context, deviceToken string) (*model.DeviceCache, error) {
 	// First, fetch the array/list of allowed device tokens
 	deviceRememberKey := s.cacheSvc.BuildKey(s.prefixes.DeviceRemember, "")
 	isKnownDevice := false
-	var deviceTokens []interface{}
-	err := s.cacheSvc.GetJSON(ctx, deviceRememberKey, &deviceTokens)
-	if err == nil {
-		for _, dt := range deviceTokens {
-			if fmt.Sprint(dt) == deviceToken {
-				isKnownDevice = true
-				break
-			}
-		}
-	} else {
-		var deviceTokenMap map[string]interface{}
-		if mapErr := s.cacheSvc.GetJSON(ctx, deviceRememberKey, &deviceTokenMap); mapErr != nil {
-			return nil, nil
-		}
-		for _, dt := range deviceTokenMap {
-			if fmt.Sprint(dt) == deviceToken {
-				isKnownDevice = true
-				break
-			}
+	var deviceTokenMap map[string]string
+	if err := s.cacheSvc.GetPHPSerialized(ctx, deviceRememberKey, &deviceTokenMap); err != nil {
+		return nil, nil
+	}
+	for _, dt := range deviceTokenMap {
+		if fmt.Sprint(dt) == deviceToken {
+			isKnownDevice = true
+			break
 		}
 	}
 
@@ -206,40 +157,22 @@ func (s *cacheMasterService) GetDeviceCache(ctx context.Context, deviceToken str
 	}
 
 	deviceDetailKey := s.cacheSvc.BuildKey(s.prefixes.Device, deviceToken)
-	var details map[string]interface{}
+	var details model.DeviceCache
 
-	err = s.cacheSvc.GetJSON(ctx, deviceDetailKey, &details)
-	if err != nil {
+	if err := s.cacheSvc.GetPHPSerialized(ctx, deviceDetailKey, &details); err != nil {
 		return nil, nil
 	}
 
-	return details, nil
-}
-
-func numberFromAny(value interface{}) (int, bool) {
-	switch v := value.(type) {
-	case int:
-		return v, v > 0
-	case int64:
-		return int(v), v > 0
-	case float64:
-		return int(v), v > 0
-	case string:
-		var parsed int
-		if _, err := fmt.Sscan(v, &parsed); err == nil && parsed > 0 {
-			return parsed, true
-		}
-	}
-	return 0, false
+	return &details, nil
 }
 
 // GetProductCache mimics the Laravel getProductCache function
-func (s *cacheMasterService) GetProductCache(ctx context.Context, productID int) (map[string]interface{}, error) {
+func (s *cacheMasterService) GetProductCache(ctx context.Context, productID int) (*model.ProductCache, error) {
 	// Use BuildTaggedKey to handle Laravel's cache tagging (prepending the version hash)
 	cacheKey := s.cacheSvc.BuildTaggedKey(ctx, s.tags.Product, s.prefixes.Product, fmt.Sprint(productID))
 
-	var productData map[string]interface{}
-	err := s.cacheSvc.GetJSON(ctx, cacheKey, &productData)
+	var productData model.ProductCache
+	err := s.cacheSvc.GetPHPSerialized(ctx, cacheKey, &productData)
 
 	if err != nil {
 		// Cache miss
@@ -247,5 +180,5 @@ func (s *cacheMasterService) GetProductCache(ctx context.Context, productID int)
 		return nil, fmt.Errorf("cache miss: dbFallback not fully implemented")
 	}
 
-	return productData, nil
+	return &productData, nil
 }

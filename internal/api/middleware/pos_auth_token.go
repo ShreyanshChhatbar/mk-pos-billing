@@ -32,20 +32,20 @@ func (m *POSAuthTokenValidateMiddleware) Handle() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if len(userCache) == 0 {
+		if userCache == nil {
 			response.Error(c, http.StatusUnauthorized, "Unauthorized, you don`t have any permissions")
 			c.Abort()
 			return
 		}
 
-		userID, ok := toUint64(userCache["user_id"])
-		if !ok {
+		userID := uint64(userCache.UserID)
+		if userID == 0 {
 			response.Error(c, http.StatusUnauthorized, "Unauthorized, you don`t have any permissions")
 			c.Abort()
 			return
 		}
 
-		permissions, _ := userCache["permissions"].(map[string]interface{})
+		permissions := userCache.Permissions
 		if len(permissions) == 0 {
 			response.Error(c, http.StatusUnauthorized, "Unauthorized, you don`t have any permissions")
 			c.Abort()

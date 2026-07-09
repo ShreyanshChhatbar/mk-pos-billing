@@ -41,32 +41,21 @@ func (m *DeviceTokenValidateMiddleware) Handle() gin.HandlerFunc {
 			return
 		}
 
-		isExpired, expiredOk := toBool(deviceDetails["is_expired"])
-		isActive, activeOk := toBool(deviceDetails["is_active"])
-		if !expiredOk || !activeOk {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": "Invalid device details format",
-			})
-			c.Abort()
-			return
-		}
-
-		if isExpired || !isActive {
+		if deviceDetails.IsExpired || !deviceDetails.IsActive {
 			response.Error(c, http.StatusUnauthorized, "Device is either expired or inactive", map[string]interface{}{
 				"invalid_device_token":    true,
-				"is_active_device_token":  isActive,
-				"is_expired_device_token": isExpired,
+				"is_active_device_token":  deviceDetails.IsActive,
+				"is_expired_device_token": deviceDetails.IsExpired,
 			})
 			c.Abort()
 			return
 		}
 
-		if deviceMasterID, ok := toUint64(deviceDetails["device_id"]); ok {
-			SetPOSDeviceMasterID(c, deviceMasterID)
+		if deviceDetails.DeviceID > 0 {
+			SetPOSDeviceMasterID(c, uint64(deviceDetails.DeviceID))
 		}
 
-		deviceType := strings.ToUpper(toString(deviceDetails["device_type"]))
+		deviceType := strings.ToUpper(deviceDetails.DeviceType)
 		if c.GetHeader("store") == "" && deviceType != "TAB" {
 			c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "Store Not Found"})
 			c.Abort()

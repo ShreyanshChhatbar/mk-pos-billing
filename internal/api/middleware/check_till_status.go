@@ -27,38 +27,36 @@ func (m *CheckTillStatusMiddleware) Handle() gin.HandlerFunc {
 		}
 
 		tillData, err := m.cacheMaster.GetTillCache(c.Request.Context(), int(storeID), true)
-		if err != nil || len(tillData) == 0 {
+		if err != nil || tillData == nil {
 			response.Error(c, http.StatusBadRequest, "Please Generate Till Number for this store till")
 			c.Abort()
 			return
 		}
 
-		if tillID, ok := toUint64(tillData["id"]); ok {
-			SetPOSTillID(c, tillID)
+		if tillData.ID > 0 {
+			SetPOSTillID(c, uint64(tillData.ID))
 		}
 
-		tillTransaction, _ := tillData["till_transaction"].(map[string]interface{})
-		if len(tillTransaction) == 0 {
+		if tillData.TillTransaction == nil {
 			response.Error(c, http.StatusTemporaryRedirect, "Please open the till", map[string]interface{}{"data": map[string]interface{}{"is_till_open": false}})
 			c.Abort()
 			return
 		}
 
-		status := toString(tillTransaction["status"])
-		if status != "OPEN" {
+		if tillData.TillTransaction.Status != "OPEN" {
 			response.Error(c, http.StatusTemporaryRedirect, "Please open the till", map[string]interface{}{"data": map[string]interface{}{"is_till_open": false}})
 			c.Abort()
 			return
 		}
 
-		if transactionDate, ok := toTime(tillTransaction["date"]); ok && !sameLocalDay(transactionDate) && !isDraftUpdate(c) {
+		if transactionDate, err := time.Parse("2006-01-02", tillData.TillTransaction.Date); err == nil && !sameLocalDay(transactionDate) && !isDraftUpdate(c) {
 			response.Error(c, http.StatusTemporaryRedirect, "Please open the till", map[string]interface{}{"data": map[string]interface{}{"is_till_open": false}})
 			c.Abort()
 			return
 		}
 
-		if transactionID, ok := toUint64(tillTransaction["id"]); ok {
-			SetPOSTillTransactionID(c, transactionID)
+		if tillData.TillTransaction.ID > 0 {
+			SetPOSTillTransactionID(c, uint64(tillData.TillTransaction.ID))
 		}
 
 		c.Next()

@@ -1,0 +1,29 @@
+meta {
+  name: Device Installation (Store POS)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{auth_pos_url}}/store-pos/get-device-token
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+      "device_identifier": "Keval_Bhavsar"
+  }
+}
+
+script:post-response {
+  const data = res.getBody();
+  if (data && data.data) {
+    if (data.data.token) {
+      bru.setVar("device_token", data.data.token);
+    }
+    if (data.data.store) {
+      bru.setVar("store_id", data.data.store);
+    }
+  }
+}

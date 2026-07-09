@@ -40,13 +40,13 @@ func (m *MapTillMiddleware) Handle() gin.HandlerFunc {
 		print("-------------------------------------------------------------------------------------------------\n")
 
 		tillData, err := m.cacheMaster.GetTillCache(c.Request.Context(), int(storeID), true)
-		if err != nil || len(tillData) == 0 {
+		if err != nil || tillData == nil {
 			c.Next()
 			return
 		}
 
-		if tillID, ok := toUint64(tillData["id"]); ok {
-			SetPOSTillID(c, tillID)
+		if tillData.ID > 0 {
+			SetPOSTillID(c, uint64(tillData.ID))
 		}
 
 		c.Next()

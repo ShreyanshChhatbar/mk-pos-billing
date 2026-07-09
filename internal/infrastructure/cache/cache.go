@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/elliotchance/phpserialize"
 	"github.com/redis/go-redis/v9"
+	"github.com/trim21/go-phpserialize"
 )
 
 // Service wraps Redis operations with namespaced key helpers.
@@ -93,142 +92,23 @@ func (s *Service) SetJSON(ctx context.Context, key string, value interface{}, tt
 func (s *Service) GetJSON(ctx context.Context, key string, dest interface{}) error {
 	data, err := s.client.Get(ctx, key).Bytes()
 	if err != nil {
-		fmt.Println("Redis Error: ", err)
 		return err
 	}
-	// 1. Try PHP Unmarshal
-	var raw interface{}
-	var phpErr error
-
-	// Detect PHP type and use specific unmarshaler
-	if len(data) > 2 && data[1] == ':' {
-		switch data[0] {
-		case 'a', 'O': // Array or Object
-			m, err := phpserialize.UnmarshalAssociativeArray(data)
-			if err == nil {
-				raw = phpValueToJSONCompatible(m)
-			} else {
-				phpErr = err
-			}
-		case 's':
-			raw, phpErr = phpserialize.UnmarshalString(data)
-		case 'i':
-			raw, phpErr = phpserialize.UnmarshalInt(data)
-		case 'd':
-			raw, phpErr = phpserialize.UnmarshalFloat(data)
-		case 'b':
-			raw, phpErr = phpserialize.UnmarshalBool(data)
-		}
-	}
-
-	if phpErr == nil && raw != nil {
-		// JSON Bridge: Safe population behavior
-		tempJSON, jerr := json.Marshal(raw)
-		if jerr == nil {
-			if jerry := json.Unmarshal(tempJSON, dest); jerry == nil {
-				return nil
-			}
-		}
-	}
-
-	// Fallback to standard JSON parsing
 	return json.Unmarshal(data, dest)
 }
 
-// phpValueToJSONCompatible converts phpserialize output into values that can be
-// safely marshaled to JSON without losing array shape or panicking on non-string keys.
-func phpValueToJSONCompatible(value interface{}) interface{} {
-	switch v := value.(type) {
-	case map[interface{}]interface{}:
-		return phpMapToJSONCompatible(v)
-	case []interface{}:
-		out := make([]interface{}, len(v))
-		for i, elem := range v {
-			out[i] = phpValueToJSONCompatible(elem)
-		}
-		return out
-	default:
-		return value
+func (s *Service) SetPHPSerialized(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+	serialized, err := phpserialize.Marshal(value)
+	if err != nil {
+		return err
 	}
+	return s.client.Set(ctx, key, serialized, ttl).Err()
 }
 
-func phpMapToJSONCompatible(m map[interface{}]interface{}) interface{} {
-	if len(m) == 0 {
-		return map[string]interface{}{}
+func (s *Service) GetPHPSerialized(ctx context.Context, key string, dest interface{}) error {
+	data, err := s.client.Get(ctx, key).Bytes()
+	if err != nil {
+		return err
 	}
-
-	indexes := make([]int, 0, len(m))
-	indexedValues := make(map[int]interface{}, len(m))
-
-	for k, v := range m {
-		index, ok := phpArrayIndex(k)
-		if !ok {
-			result := make(map[string]interface{}, len(m))
-			for key, val := range m {
-				result[fmt.Sprint(key)] = phpValueToJSONCompatible(val)
-			}
-			return result
-		}
-
-		indexes = append(indexes, index)
-		indexedValues[index] = phpValueToJSONCompatible(v)
-	}
-
-	sort.Ints(indexes)
-	for i, index := range indexes {
-		if index != i {
-			result := make(map[string]interface{}, len(m))
-			for key, val := range m {
-				result[fmt.Sprint(key)] = phpValueToJSONCompatible(val)
-			}
-			return result
-		}
-	}
-
-	out := make([]interface{}, len(m))
-	for index, value := range indexedValues {
-		out[index] = value
-	}
-	return out
-}
-
-func phpArrayIndex(key interface{}) (int, bool) {
-	maxInt := int(^uint(0) >> 1)
-
-	switch v := key.(type) {
-	case int:
-		return v, v >= 0
-	case int8:
-		return int(v), v >= 0
-	case int16:
-		return int(v), v >= 0
-	case int32:
-		return int(v), v >= 0
-	case int64:
-		if v < 0 || v > int64(maxInt) {
-			return 0, false
-		}
-		return int(v), true
-	case uint:
-		if v > uint(maxInt) {
-			return 0, false
-		}
-		return int(v), true
-	case uint8:
-		return int(v), true
-	case uint16:
-		return int(v), true
-	case uint32:
-		if uint64(v) > uint64(maxInt) {
-			return 0, false
-		}
-		return int(v), true
-	case uint64:
-		if v > uint64(maxInt) {
-			return 0, false
-		}
-		return int(v), true
-	default:
-		return 0, false
-	}
+	return phpserialize.Unmarshal(data, dest)
 }
