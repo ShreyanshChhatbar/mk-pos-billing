@@ -67,7 +67,7 @@ func (s *cacheMasterService) GetUserAuthCache(ctx context.Context, token string)
 	userCacheKey := s.cacheSvc.BuildKey(s.prefixes.PosAuthUser, token)
 
 	var findUserCache struct {
-		ID int `json:"id"`
+		ID int `php:"id"`
 	}
 	err := s.cacheSvc.GetPHPSerialized(ctx, userCacheKey, &findUserCache)
 	if err != nil {

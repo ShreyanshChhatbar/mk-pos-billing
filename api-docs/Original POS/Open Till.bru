@@ -1,0 +1,78 @@
+meta {
+  name: Open Till
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{store_pos_url}}/till/transaction/change-status
+  body: json
+  auth: bearer
+}
+
+headers {
+  device: {{device_token}}
+  store: {{store_id}}
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+      "status": "OPEN",
+      "float_cash":true,
+      "remarks":"Done-16-07-2024-1",
+      "opened_by": 859,
+      "Cash": [
+          {
+              "denomination": 500,
+              "value": 3
+          },
+          {
+              "denomination": 200,
+              "value": 1
+          },
+          {
+              "denomination": 100,
+              "value": 0
+          },
+          {
+              "denomination": 50,
+              "value": 0
+          },
+          {
+              "denomination": 20,
+              "value": 0
+          },
+          {
+              "denomination": 10,
+              "value": 0
+          },
+          {
+              "denomination": 5,
+              "value": 0
+          },
+          {
+              "denomination": 2,
+              "value": 0
+          },
+          {
+              "denomination": 1,
+              "value": 0
+          }
+      ]
+  }
+}
+
+vars:pre-request {
+  store_pos_url: http://localhost:8000/api/v1
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+  followRedirects: false
+  maxRedirects: 5
+}

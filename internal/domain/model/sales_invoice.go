@@ -6,52 +6,51 @@ import (
 	"gorm.io/gorm"
 )
 
+// B2CGenericPricing maps to b_2_c_store_template_generic_pricing.
+// Used to look up fixed sales prices for generic products under a B2C pricing template.
+type B2CGenericPricing struct {
+	ID                   uint64         `gorm:"column:id;primaryKey"`
+	B2CPricingTemplateID uint64         `gorm:"column:b_2_c_pricing_template_id"`
+	ProductID            uint64         `gorm:"column:product_id"`
+	SalesPrice           float64        `gorm:"column:sales_price"`
+	DeletedAt            gorm.DeletedAt `gorm:"column:deleted_at"`
+}
+
+func (B2CGenericPricing) TableName() string {
+	return "b_2_c_store_template_generic_pricing"
+}
+
 type SalesInvoiceDraftJSON struct {
-	ID                    uint64         `gorm:"column:id;primaryKey"`
-	StoreID               uint64         `gorm:"column:store_id"`
-	OrganizationID        uint64         `gorm:"column:organization_id"`
-	BillingUserID         uint64         `gorm:"column:billing_user_id"`
-	CustomerID            *uint64        `gorm:"column:customer_id"`
-	CustomerAddressID     *uint64        `gorm:"column:customer_address_id"`
-	DoctorID              *uint64        `gorm:"column:doctor_id"`
-	PatientID             *uint64        `gorm:"column:patient_id"`
-	PrescriptionID        *uint64        `gorm:"column:prescription_id"`
-	IsHomeDelivery        bool           `gorm:"column:is_home_delivery"`
-	Status                string         `gorm:"column:status"`
-	PaymentStatus         string         `gorm:"column:payment_status"`
-	TotalBillAmount       float64        `gorm:"column:total_bill_amount"`
-	TaxableAmount         float64        `gorm:"column:taxable_amount"`
-	TotalAmountBeforeDisc float64        `gorm:"column:total_amount_before_discount"`
-	DiscountType          string         `gorm:"column:discount_type"`
-	DiscountPercentage    float64        `gorm:"column:discount_percentage"`
-	DiscountAmount        float64        `gorm:"column:discount_amount"`
-	IGST                  float64        `gorm:"column:igst"`
-	CGST                  float64        `gorm:"column:cgst"`
-	SGST                  float64        `gorm:"column:sgst"`
-	PrepaidAmount         float64        `gorm:"column:prepaid_amount"`
-	TotalGST              float64        `gorm:"column:total_gst"`
-	RoundOff              float64        `gorm:"column:round_off"`
-	TotalInvoiceAmount    float64        `gorm:"column:total_invoice_amount"`
-	TotalProducts         int            `gorm:"column:total_products"`
-	TotalItems            int            `gorm:"column:total_items"`
-	TotalQuantity         int            `gorm:"column:total_quantity"`
-	TotalAmount           float64        `gorm:"column:total_amount"`
-	TotalDiscount         float64        `gorm:"column:total_discount"`
-	TotalAmountReceived   float64        `gorm:"column:total_amount_received"`
-	TotalBillBeforePromo  float64        `gorm:"column:total_bill_amount_before_promo"`
-	PromoCode             *string        `gorm:"column:promo_code"`
-	Notes                 *string        `gorm:"column:notes"`
-	DraftJSON             []byte         `gorm:"column:draft_json"`
-	DeviceMasterID        *uint64        `gorm:"column:device_master_id"`
-	TillID                *uint64        `gorm:"column:till_id"`
-	TillTransactionID     *uint64        `gorm:"column:till_transaction_id"`
-	IsActive              bool           `gorm:"column:is_active"`
-	CreatedBy             uint64         `gorm:"column:created_by"`
-	UpdatedBy             *uint64        `gorm:"column:updated_by"`
-	CreatedAt             time.Time      `gorm:"column:created_at"`
-	UpdatedAt             time.Time      `gorm:"column:updated_at"`
-	DeletedAt             gorm.DeletedAt `gorm:"column:deleted_at;index"`
-	DeletedBy             *uint64        `gorm:"column:deleted_by"`
+	ID                     uint64         `gorm:"column:id;primaryKey"`
+	InvoiceNumber          string         `gorm:"column:invoice_number"`
+	StoreID                uint64         `gorm:"column:store_id"`
+	OrganizationID         uint64         `gorm:"column:organization_id"`
+	BillingUserID          uint64         `gorm:"column:billing_user_id"`
+	CustomerID             *uint64        `gorm:"column:customer_id"`
+	CustomerAddressID      *uint64        `gorm:"column:customer_address_id"`
+	DoctorID               *uint64        `gorm:"column:doctor_id"`
+	PatientID              *uint64        `gorm:"column:patient_id"`
+	PrescriptionID         *uint64        `gorm:"column:prescription_id"`
+	Status                 string         `gorm:"column:status"`
+	PaymentStatus          string         `gorm:"column:payment_status"`
+	TotalBillAmount        float64        `gorm:"column:total_bill_amount"`
+	PrepaidAmount          float64        `gorm:"column:prepaid_amount"`
+	RoundOff               float64        `gorm:"column:round_off"`
+	TotalInvoiceAmount     float64        `gorm:"column:total_invoice_amount"`
+	TotalAmount            float64        `gorm:"column:total_amount"`
+	TotalDiscount          float64        `gorm:"column:total_discount"`
+	TotalAmountReceived    float64        `gorm:"column:total_amount_received"`
+	LoyaltyProgramDiscount int64          `gorm:"column:loyalty_program_discount"`
+	CancelReason           *string        `gorm:"column:cancel_reason"`
+	DraftJSON              []byte         `gorm:"column:draft_json"`
+	TillID                 *uint64        `gorm:"column:till_id"`
+	TillTransactionID      *uint64        `gorm:"column:till_transaction_id"`
+	CreatedBy              uint64         `gorm:"column:created_by"`
+	UpdatedBy              *uint64        `gorm:"column:updated_by"`
+	CreatedAt              time.Time      `gorm:"column:created_at"`
+	UpdatedAt              time.Time      `gorm:"column:updated_at"`
+	DeletedAt              gorm.DeletedAt `gorm:"column:deleted_at;index"`
+	DeletedBy              *uint64        `gorm:"column:deleted_by"`
 }
 
 func (SalesInvoiceDraftJSON) TableName() string { return "sales_invoice_draft_jsons" }
@@ -207,3 +206,23 @@ type Batch struct {
 }
 
 func (Batch) TableName() string { return "batches" }
+
+type StoreInventoryTransaction struct {
+	ID              uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	StoreID         uint64    `gorm:"column:store_id"`
+	ProductID       uint64    `gorm:"column:product_id"`
+	BatchCode       string    `gorm:"column:batch_code"`
+	StoreBatchID    uint64    `gorm:"column:store_batch_id"`
+	ExpiryDate      time.Time `gorm:"column:expiry_date"`
+	Quantity        int       `gorm:"column:quantity"`
+	Rate            float64   `gorm:"column:rate"`
+	TotalAmount     float64   `gorm:"column:total_amount"`
+	VoucherType     string    `gorm:"column:voucher_type"`
+	VoucherID       uint64    `gorm:"column:voucher_id"`
+	CreatedBy       uint64    `gorm:"column:created_by"`
+	TransactionTime time.Time `gorm:"column:transaction_time"`
+}
+
+func (StoreInventoryTransaction) TableName() string {
+	return "store_inventory_transactions"
+}

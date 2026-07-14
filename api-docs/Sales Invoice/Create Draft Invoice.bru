@@ -7,49 +7,43 @@ meta {
 post {
   url: {{base_url}}/api/v1/sales/sales-invoice/draft/create
   body: json
-  auth: inherit
+  auth: bearer
 }
 
 headers {
-  Authorization: Bearer {{access_token}}
   device: {{device_token}}
   store: {{store_id}}
   Content-Type: application/json
 }
 
+auth:bearer {
+  token: {{access_token}}
+}
+
 body:json {
   {
-    "billing_user_id": 1,
-    "customer_id": null,
-    "patient_id": null,
-    "doctor_id": null,
-    "customer_address_id": null,
-    "is_home_delivery": false,
-    "is_confirmed": false,
-    "promo_code": null,
-    "course_days": null,
-    "notes": "Draft invoice from Bruno",
-    "asm_user_id": null,
-    "items": [
-      {
-        "product_id": 1001,
-        "batch_code": "BATCH123",
-        "quantity": 1,
-        "sales_rate": null,
-        "is_free_product": false,
-        "combo_product_id": null,
-        "priceDelta": null,
-        "best_alternate": {},
-        "per_tab_frontend": null
-      }
-    ],
-    "payments": []
+      "is_confirmed": false,
+      "is_home_delivery": false,
+      "billing_user_id": 859,
+      "customer_id": 153,
+      "customer_address_id": 267,
+      "patient_id": 466,
+      "doctor_id": 150,
+      "items": [
+          {
+              "product_id": 11384,
+              "batch_code": "WEIY89",
+              "quantity": 1
+          }
+      ]
   }
 }
 
 settings {
   encodeUrl: true
   timeout: 0
+  followRedirects: false
+  maxRedirects: 5
 }
 
 docs {

@@ -23,15 +23,16 @@ func InitializeServerApp() (*ServerApp, error) {
 	cacheService := cache.NewCacheService(redisClient, redisCfg.Prefix+cacheCfg.Prefix)
 	salesCfg := config.LoadSalesInvoiceConfig()
 
-	salesInvoiceRepo := repository.NewSalesInvoiceRepository(db)
-	salesInvoiceService := service.NewSalesInvoiceService(salesInvoiceRepo, cacheService, salesCfg)
-	salesInvoiceHandler := handlers.NewSalesInvoiceHandler(salesInvoiceService, salesCfg)
-	duplicateRequestMiddleware := middleware.NewDuplicateRequestMiddleware(cacheService, salesCfg)
-
 	cachePrefixesCfg := cacheCfg.Prefixes
 	cacheTagsCfg := cacheCfg.Tags
 	cacheExpiryCfg := cacheCfg.Expiry
 	cacheMasterService := service.NewCacheMasterService(cacheService, cachePrefixesCfg, cacheTagsCfg, cacheExpiryCfg)
+
+	salesInvoiceRepo := repository.NewSalesInvoiceRepository(db)
+	salesInvoiceService := service.NewSalesInvoiceService(salesInvoiceRepo, cacheService, salesCfg, cacheMasterService)
+	salesInvoiceHandler := handlers.NewSalesInvoiceHandler(salesInvoiceService, salesCfg)
+	duplicateRequestMiddleware := middleware.NewDuplicateRequestMiddleware(cacheService, salesCfg)
+
 	deviceTokenValidateMiddleware := middleware.NewDeviceTokenValidateMiddleware(cacheMasterService, cachePrefixesCfg)
 	posAuthTokenValidateMiddleware := middleware.NewPOSAuthTokenValidateMiddleware(cacheMasterService)
 	mapTillMiddleware := middleware.NewMapTillMiddleware(cacheMasterService)

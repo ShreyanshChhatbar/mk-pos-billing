@@ -27,7 +27,6 @@ type ProductValidationData struct {
 	ID                uint64 `gorm:"column:id"`
 	SalesUnit         int    `gorm:"column:sales_unit"`
 	WSCode            int    `gorm:"column:ws_code"`
-	IsMSPProduct      bool   `gorm:"column:is_msp_product"`
 	ScheduledTypeCode string `gorm:"column:scheduled_type_code"`
 }
 
@@ -123,18 +122,11 @@ func (r *SalesInvoiceRepository) MarkDraftInvoiced(ctx context.Context, draftID 
 		Updates(map[string]interface{}{"status": "INVOICED", "updated_by": updatedBy}).Error
 }
 
-func (r *SalesInvoiceRepository) ReduceInventoryStock(ctx context.Context, storeID, productID, storeBatchID uint64, batchCode string, quantity int) error {
-	result := r.WithContext(ctx).
-		Model(&model.StoreInventory{}).
-		Where("store_id = ? AND product_id = ? AND store_batch_id = ? AND batch_code = ? AND closing_stock >= ? AND deleted_at IS NULL", storeID, productID, storeBatchID, batchCode, quantity).
-		Update("closing_stock", gorm.Expr("closing_stock - ?", quantity))
-	if result.Error != nil {
-		return result.Error
+func (r *SalesInvoiceRepository) InsertInventoryTransactions(ctx context.Context, txns []model.StoreInventoryTransaction) error {
+	if len(txns) == 0 {
+		return nil
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("inventory row not found for product %d batch %s", productID, batchCode)
-	}
-	return nil
+	return r.WithContext(ctx).Create(&txns).Error
 }
 
 func (r *SalesInvoiceRepository) FetchBatchStocks(ctx context.Context, storeID uint64, productIDs []uint64, batchCodes []string, ignoreStockCheck bool, expiryCutoff time.Time) (map[string][]BatchStockRow, error) {
@@ -168,6 +160,28 @@ func (r *SalesInvoiceRepository) FetchBatchStocks(ctx context.Context, storeID u
 		grouped[row.Key] = append(grouped[row.Key], row)
 	}
 	return grouped, nil
+}
+
+func (r *SalesInvoiceRepository) FetchGenericPricings(ctx context.Context, templateIDs []uint64, productIDs []uint64) (map[string]model.B2CGenericPricing, error) {
+	if len(templateIDs) == 0 || len(productIDs) == 0 {
+		return map[string]model.B2CGenericPricing{}, nil
+	}
+
+	var pricings []model.B2CGenericPricing
+	if err := r.WithContext(ctx).
+		Where("b_2_c_pricing_template_id IN ?", templateIDs).
+		Where("product_id IN ?", productIDs).
+		Where("deleted_at IS NULL").
+		Find(&pricings).Error; err != nil {
+		return nil, err
+	}
+
+	pricingMap := make(map[string]model.B2CGenericPricing, len(pricings))
+	for _, p := range pricings {
+		key := fmt.Sprintf("%d:%d", p.B2CPricingTemplateID, p.ProductID)
+		pricingMap[key] = p
+	}
+	return pricingMap, nil
 }
 
 func (r *SalesInvoiceRepository) FetchBatchMeta(ctx context.Context, productIDs []uint64, batchCodes []string) (map[string]model.Batch, error) {
@@ -231,7 +245,7 @@ func (r *SalesInvoiceRepository) GetProductValidationData(ctx context.Context, p
 	var data ProductValidationData
 	err := r.WithContext(ctx).
 		Table("products").
-		Select("id, sales_unit, ws_code, is_msp_product, scheduled_type_code").
+		Select("id, sales_unit, ws_code, scheduled_type_code").
 		Where("id = ? AND is_active = true AND deleted_at IS NULL", productID).
 		First(&data).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {

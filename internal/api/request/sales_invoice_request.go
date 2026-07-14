@@ -12,25 +12,19 @@ type CreateOrUpdateSalesInvoiceRequest struct {
 	CourseDays        *float64                     `json:"course_days" binding:"omitempty,gt=0"`
 	Notes             *string                      `json:"notes"`
 	ASMUserID         *uint64                      `json:"asm_user_id" binding:"omitempty,gt=0"`
-	StoreID           uint64                       `json:"store_id" binding:"required,gt=0"`
-	UserID            uint64                       `json:"user_id" binding:"required,gt=0"`
-	DeviceMasterID    *uint64                      `json:"device_master_id" binding:"omitempty,gt=0"`
-	TillID            *uint64                      `json:"till_id" binding:"omitempty,gt=0"`
-	TillTransactionID *uint64                      `json:"till_transaction_id" binding:"omitempty,gt=0"`
 	Items             *[]CreateOrUpdateInvoiceItem `json:"items"`
 	Payments          []CreateOrUpdatePayment      `json:"payments"`
 }
 
 type CreateOrUpdateInvoiceItem struct {
-	ProductID      uint64   `json:"product_id" binding:"required,gt=0"`
-	BatchCode      string   `json:"batch_code" binding:"required,max=32"` // use cfg value if fixed, otherwise service
-	Quantity       int      `json:"quantity" binding:"required,gt=0"`
-	IsFreeProduct  bool     `json:"is_free_product"`
-	ComboProductID *uint64  `json:"combo_product_id" binding:"omitempty,gt=0"`
-	SalesRate      *float64 `json:"sales_rate"`
-	PriceDelta     any      `json:"priceDelta"`
-	BestAlternate  any      `json:"best_alternate"`
-	PerTabFrontend any      `json:"per_tab_frontend"`
+	ProductID      uint64  `json:"product_id" binding:"required,gt=0"`
+	BatchCode      string  `json:"batch_code" binding:"required,max=32"` // use cfg value if fixed, otherwise service
+	Quantity       int     `json:"quantity" binding:"required,gt=0"`
+	IsFreeProduct  bool    `json:"is_free_product"`
+	ComboProductID *uint64 `json:"combo_product_id" binding:"omitempty,gt=0"`
+	PriceDelta     any     `json:"priceDelta"`
+	BestAlternate  any     `json:"best_alternate"`
+	PerTabFrontend any     `json:"per_tab_frontend"`
 }
 
 type CreateOrUpdatePayment struct {

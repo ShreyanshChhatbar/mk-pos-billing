@@ -48,7 +48,6 @@ type CreateOrUpdateSalesInvoiceItem struct {
 	ProductID      uint64
 	BatchCode      string
 	Quantity       int
-	SalesRate      *float64
 	IsFreeProduct  bool
 	ComboProductID *uint64
 }
@@ -66,53 +65,105 @@ type CreateOrUpdateSalesInvoiceOutput struct {
 	Message string
 }
 
+type draftTaxDetailJSON struct {
+	TaxName   string  `json:"tax_name"`
+	TaxRate   float64 `json:"tax_rate"`
+	TaxType   string  `json:"tax_type"`
+	TaxAmount float64 `json:"tax_amount"`
+}
+
 type draftProductJSON struct {
-	ProductID          uint64  `json:"product_id"`
-	BatchCode          string  `json:"batch_code"`
-	ExpiryDate         string  `json:"expiry_date"`
-	MRP                float64 `json:"mrp"`
-	SalesRate          float64 `json:"sales_rate"`
-	BaseRate           float64 `json:"base_rate"`
-	Quantity           int     `json:"quantity"`
-	GSTPercentage      float64 `json:"gst_percentage"`
-	GSTAmount          float64 `json:"gst_amount"`
-	BillAmount         float64 `json:"bill_amount"`
-	DiscountType       string  `json:"discount_type"`
-	DiscountAmount     float64 `json:"discount_amount"`
-	DiscountPercentage float64 `json:"discount_percentage"`
-	IsFreeProduct      bool    `json:"is_free_product"`
-	ComboProductID     *uint64 `json:"combo_product_id"`
+	ProductID                     uint64               `json:"product_id"`
+	BatchCode                     string               `json:"batch_code"`
+	ExpiryDate                    string               `json:"expiry_date"`
+	MRP                           float64              `json:"mrp"`
+	SalesRate                     float64              `json:"sales_rate"`
+	BaseRate                      float64              `json:"base_rate"`
+	Quantity                      int                  `json:"quantity"`
+	GSTPercentage                 float64              `json:"gst_percentage"`
+	GSTAmount                     float64              `json:"gst_amount"`
+	BillAmount                    float64              `json:"bill_amount"`
+	DiscountType                  string               `json:"discount_type"`
+	DiscountAmount                float64              `json:"discount_amount"`
+	DiscountPercentage            float64              `json:"discount_percentage"`
+	IsFreeProduct                 bool                 `json:"is_free_product"`
+	ComboProductID                *uint64              `json:"combo_product_id"`
+	HSNCode                       string               `json:"hsn_code"`
+	CreatedBy                     uint64               `json:"created_by"`
+	TaxDetails                    []draftTaxDetailJSON `json:"tax_details"`
+	TotalAmount                   float64              `json:"total_amount"`
+	BatchQuantity                 int                  `json:"batch_quantity"`
+	DeviceMasterID                *uint64              `json:"device_master_id"`
+	IsAdvanceOrder                bool                 `json:"is_advance_order"`
+	IsComboProduct                bool                 `json:"is_combo_product"`
+	OrderedQuantity               *int                 `json:"ordered_quantity"`
+	ProductLocation               string               `json:"product_location"`
+	AvailableQuantity             int                  `json:"available_quantity"`
+	SalesRateBeforePromo          float64              `json:"sales_rate_before_promo"`
+	IsPrescriptionRequired        bool                 `json:"is_prescription_required"`
+	DiscountAmountBeforePromo     float64              `json:"discount_amount_before_promo"`
+	DiscountPercentageBeforePromo float64              `json:"discount_percentage_before_promo"`
+	IsEditable                    bool                 `json:"is_editable"`
 }
 
 type salesInvoiceDraftJSONPayload struct {
-	IsHomeDelivery  bool               `json:"is_home_delivery"`
-	IsActive        bool               `json:"is_active"`
-	PaymentStatus   string             `json:"payment_status"`
-	DeviceMasterID  *uint64            `json:"device_master_id"`
-	PromoCode       *string            `json:"promo_code"`
-	Notes           *string            `json:"notes"`
-	TotalProducts   int                `json:"total_products"`
-	TotalItems      int                `json:"total_items"`
-	TotalQuantity   int                `json:"total_quantity"`
-	TotalGST        float64            `json:"total_gst"`
-	SGST            float64            `json:"sgst"`
-	CGST            float64            `json:"cgst"`
-	IGST            float64            `json:"igst"`
-	DeliveryCharges float64            `json:"delivery_charges"`
-	TaxableAmount   float64            `json:"taxable_amount"`
-	RoundOff        float64            `json:"round_off"`
-	Products        []draftProductJSON `json:"products"`
+	IsHomeDelivery             bool               `json:"is_home_delivery"`
+	IsActive                   bool               `json:"is_active"`
+	PaymentStatus              string             `json:"payment_status"`
+	DeviceMasterID             *uint64            `json:"device_master_id"`
+	PromoCode                  *string            `json:"promo_code"`
+	Notes                      *string            `json:"notes"`
+	TotalProducts              int                `json:"total_products"`
+	TotalItems                 int                `json:"total_items"`
+	TotalQuantity              int                `json:"total_quantity"`
+	TotalGST                   float64            `json:"total_gst"`
+	SGST                       float64            `json:"sgst"`
+	CGST                       float64            `json:"cgst"`
+	IGST                       float64            `json:"igst"`
+	DeliveryCharges            float64            `json:"delivery_charges"`
+	TaxableAmount              float64            `json:"taxable_amount"`
+	RoundOff                   float64            `json:"round_off"`
+	CINNumber                  *string            `json:"cin_number"`
+	GSTNumber                  *string            `json:"gst_number"`
+	GSTTreatment               string             `json:"gst_treatment"`
+	TotalAmount                float64            `json:"total_amount"`
+	TotalBillAmount            float64            `json:"total_bill_amount"`
+	TotalInvoiceAmount         float64            `json:"total_invoice_amount"`
+	TotalBillAmountBeforePromo float64            `json:"total_bill_amount_before_promo"`
+	PlaceOfSupplyCode          string             `json:"place_of_supply_code"`
+	IsPrescriptionRequired     bool               `json:"is_prescription_required"`
+	Products                   []draftProductJSON `json:"products"`
 }
 
 type draftComputedLine struct {
 	Item         CreateOrUpdateSalesInvoiceItem
 	Batch        model.Batch
 	SalesRate    float64
+	BaseRate     float64
 	BillAmount   float64
 	TotalAmount  float64
 	DiscountType string
 	DiscountAmt  float64
 	DiscountPct  float64
+	GSTPct       float64
+	GSTAmount    float64
+	CGST         float64
+	SGST         float64
+	IGST         float64
+}
+
+type DraftCalculationResult struct {
+	Lines         []draftComputedLine
+	TotalProducts int
+	TotalItems    int
+	TotalQty      int
+	TotalBill     float64
+	TotalAmount   float64
+	TaxableAmount float64
+	TotalGST      float64
+	TotalCGST     float64
+	TotalSGST     float64
+	TotalIGST     float64
 }
 
 type draftCacheData struct {
@@ -157,13 +208,14 @@ type draftPaymentResp struct {
 }
 
 type SalesInvoiceService struct {
-	repo  *repository.SalesInvoiceRepository
-	cache *cache.Service
-	cfg   config.SalesInvoiceConfig
+	repo        *repository.SalesInvoiceRepository
+	cache       *cache.Service
+	cfg         config.SalesInvoiceConfig
+	cacheMaster CacheMasterService
 }
 
-func NewSalesInvoiceService(repo *repository.SalesInvoiceRepository, cacheService *cache.Service, cfg config.SalesInvoiceConfig) *SalesInvoiceService {
-	return &SalesInvoiceService{repo: repo, cache: cacheService, cfg: cfg}
+func NewSalesInvoiceService(repo *repository.SalesInvoiceRepository, cacheService *cache.Service, cfg config.SalesInvoiceConfig, cacheMaster CacheMasterService) *SalesInvoiceService {
+	return &SalesInvoiceService{repo: repo, cache: cacheService, cfg: cfg, cacheMaster: cacheMaster}
 }
 
 func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOrUpdateSalesInvoiceInput) (*CreateOrUpdateSalesInvoiceOutput, error) {
@@ -218,9 +270,6 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 
 			raw, _ := json.Marshal(draftPayload)
 			draft.DraftJSON = raw
-			draft.TotalProducts = 0
-			draft.TotalItems = 0
-			draft.TotalQuantity = 0
 			draft.TotalAmount = 0
 			draft.TotalBillAmount = 0
 			draft.TotalInvoiceAmount = 0
@@ -241,14 +290,14 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			return nil
 		}
 
-		lines, totalProducts, totalItems, totalQty, totalBill, totalAmount, err := s.calculateDraftLines(ctx, txRepo, input, cachedData)
+		calcResult, err := s.calculateDraftLines(ctx, txRepo, input, cachedData)
 		if err != nil {
 			return err
 		}
 
-		totalInvoice := math.Round(totalBill)
-		roundOff := totalInvoice - totalBill
-		totalDiscount := totalAmount - totalBill
+		totalInvoice := math.Round(calcResult.TotalBill)
+		roundOff := totalInvoice - calcResult.TotalBill
+		totalDiscount := calcResult.TotalAmount - calcResult.TotalBill
 
 		existingPayments, err := txRepo.GetDraftPayments(ctx, draft.ID)
 		if err != nil {
@@ -265,23 +314,27 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		}
 
 		draftPayload := salesInvoiceDraftJSONPayload{
-			IsHomeDelivery:  isHomeDelivery,
-			IsActive:        true,
-			PaymentStatus:   paymentStatus,
-			DeviceMasterID:  input.DeviceMasterID,
-			PromoCode:       input.PromoCode,
-			Notes:           input.Notes,
-			TotalProducts:   totalProducts,
-			TotalItems:      totalItems,
-			TotalQuantity:   totalQty,
-			TotalGST:        0,
-			SGST:            0,
-			CGST:            0,
-			IGST:            0,
-			DeliveryCharges: 0,
-			TaxableAmount:   totalBill,
-			RoundOff:        roundOff,
-			Products:        mapLinesToDraftProducts(lines),
+			IsHomeDelivery:             isHomeDelivery,
+			IsActive:                   true,
+			PaymentStatus:              paymentStatus,
+			DeviceMasterID:             input.DeviceMasterID,
+			PromoCode:                  input.PromoCode,
+			Notes:                      input.Notes,
+			TotalProducts:              calcResult.TotalProducts,
+			TotalItems:                 calcResult.TotalItems,
+			TotalQuantity:              calcResult.TotalQty,
+			TotalGST:                   calcResult.TotalGST,
+			SGST:                       calcResult.TotalSGST,
+			CGST:                       calcResult.TotalCGST,
+			IGST:                       calcResult.TotalIGST,
+			DeliveryCharges:            0,
+			TaxableAmount:              calcResult.TaxableAmount,
+			RoundOff:                   roundOff,
+			TotalAmount:                calcResult.TotalAmount,
+			TotalBillAmount:            calcResult.TotalBill,
+			TotalInvoiceAmount:         totalInvoice,
+			TotalBillAmountBeforePromo: calcResult.TotalBill,
+			Products:                   mapLinesToDraftProducts(calcResult.Lines),
 		}
 		rawDraftJSON, err := json.Marshal(draftPayload)
 		if err != nil {
@@ -296,36 +349,18 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		draft.CustomerAddressID = input.CustomerAddressID
 		draft.DoctorID = input.DoctorID
 		draft.PatientID = input.PatientID
-		draft.IsHomeDelivery = isHomeDelivery
 		draft.Status = status
 		draft.PaymentStatus = paymentStatus
-		draft.TotalBillAmount = totalBill
-		draft.TaxableAmount = totalBill
-		draft.TotalAmountBeforeDisc = totalAmount
-		draft.DiscountType = "INR"
-		draft.DiscountPercentage = 0
-		draft.DiscountAmount = totalDiscount
-		draft.IGST = 0
-		draft.CGST = 0
-		draft.SGST = 0
+		draft.TotalBillAmount = calcResult.TotalBill
 		draft.PrepaidAmount = 0
-		draft.TotalGST = 0
 		draft.RoundOff = roundOff
 		draft.TotalInvoiceAmount = totalInvoice
-		draft.TotalProducts = totalProducts
-		draft.TotalItems = totalItems
-		draft.TotalQuantity = totalQty
-		draft.TotalAmount = totalAmount
+		draft.TotalAmount = calcResult.TotalAmount
 		draft.TotalDiscount = totalDiscount
 		draft.TotalAmountReceived = totalReceived
-		draft.TotalBillBeforePromo = totalBill
-		draft.PromoCode = input.PromoCode
-		draft.Notes = input.Notes
 		draft.DraftJSON = rawDraftJSON
-		draft.DeviceMasterID = input.DeviceMasterID
 		draft.TillID = input.TillID
 		draft.TillTransactionID = input.TillTransactionID
-		draft.IsActive = true
 		draft.UpdatedBy = &input.UserID
 		draft.UpdatedAt = now
 
@@ -354,7 +389,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		persistedPayments, _ := txRepo.GetDraftPayments(ctx, draft.ID)
 		cacheData := draftCacheData{
 			SalesInvoiceDraft:     *draft,
-			CalculatedProductData: draftCalculatedProductContainer{Products: s.linesToProductsMap(lines)},
+			CalculatedProductData: draftCalculatedProductContainer{Products: s.linesToProductsMap(calcResult.Lines)},
 		}
 		_ = s.cache.SetJSON(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
 
@@ -364,7 +399,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		}
 
 		if !derefBool(input.IsConfirmed) {
-			out = &CreateOrUpdateSalesInvoiceOutput{Data: s.buildDraftResponse(*draft, mapLinesToDraftProducts(lines), persistedPayments), Message: msg}
+			out = &CreateOrUpdateSalesInvoiceOutput{Data: s.buildDraftResponse(*draft, mapLinesToDraftProducts(calcResult.Lines), persistedPayments), Message: msg}
 			return nil
 		}
 
@@ -372,7 +407,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			return fmt.Errorf("entered amount is more then the bill amount, please enter proper amount")
 		}
 
-		invoiceID, err := s.finalizeInvoice(ctx, txRepo, input, draft, lines)
+		invoiceID, err := s.finalizeInvoice(ctx, txRepo, input, draft, calcResult.Lines)
 		if err != nil {
 			return err
 		}
@@ -451,10 +486,14 @@ func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrU
 		if pData == nil {
 			return errors.New("items." + strconv.Itoa(i) + ".product_id is invalid")
 		}
+		pCacheData, err := s.cacheMaster.GetProductCache(ctx, int(item.ProductID))
+		if err != nil {
+			return err
+		}
 		if pData.SalesUnit > 0 && item.Quantity%pData.SalesUnit != 0 {
 			return errors.New("the quantity must be a multiple of the product's sales unit")
 		}
-		if pData.IsMSPProduct && item.Quantity != 1 {
+		if pCacheData.IsMspProduct && item.Quantity != 1 {
 			return errors.New("the quantity for a loyalty program product must be one")
 		}
 		if pData.WSCode == s.cfg.DeliveryChargeProductWSCode && item.Quantity != 1 {
@@ -494,27 +533,57 @@ func (s *SalesInvoiceService) loadOrCreateDraft(ctx context.Context, repo *repos
 	return &model.SalesInvoiceDraftJSON{}, nil
 }
 
-func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, repo *repository.SalesInvoiceRepository, input CreateOrUpdateSalesInvoiceInput, cachedData *draftCacheData) ([]draftComputedLine, int, int, int, float64, float64, error) {
+func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, repo *repository.SalesInvoiceRepository, input CreateOrUpdateSalesInvoiceInput, cachedData *draftCacheData) (DraftCalculationResult, error) {
+	var emptyResult DraftCalculationResult
+
 	productIDs, batchCodes := extractUniqueFromItems(input.Items)
 	batchMeta, err := repo.FetchBatchMeta(ctx, productIDs, batchCodes)
 	if err != nil {
-		return nil, 0, 0, 0, 0, 0, err
+		return emptyResult, err
 	}
 	stockRows, err := repo.FetchBatchStocks(ctx, input.StoreID, productIDs, batchCodes, false, s.batchExpiryCutoff())
 	if err != nil {
-		return nil, 0, 0, 0, 0, 0, err
+		return emptyResult, err
 	}
 
-	lines := make([]draftComputedLine, 0, len(input.Items))
-	totalBill := 0.0
-	totalAmount := 0.0
-	totalQty := 0
+	storeCache, err := s.cacheMaster.GetStoreCache(ctx, int(input.StoreID), false)
+	if err != nil {
+		return emptyResult, fmt.Errorf("store cache unavailable: %w", err)
+	}
+
+	// Pre-fetch generic pricing templates for B2C default org
+	var templateIDs []uint64
+	var genericProductIDs []uint64
+	if input.OrganizationID == s.cfg.DefaultOrganizationID {
+		for _, item := range input.Items {
+			productCache, err := s.cacheMaster.GetProductCache(ctx, int(item.ProductID))
+			if err != nil {
+				continue
+			}
+			if productCache.IsGeneric {
+				category := productCache.B2CProductCategoryID
+				if discountData, ok := storeCache.ProductCategoriesDiscounts[category]; ok {
+					templateIDs = append(templateIDs, uint64(discountData.B2CPricingTemplateID))
+					genericProductIDs = append(genericProductIDs, item.ProductID)
+				}
+			}
+		}
+	}
+
+	genericPricingMap, err := repo.FetchGenericPricings(ctx, templateIDs, genericProductIDs)
+	if err != nil {
+		return emptyResult, fmt.Errorf("failed to fetch generic pricings: %w", err)
+	}
+
+	result := DraftCalculationResult{
+		Lines: make([]draftComputedLine, 0, len(input.Items)),
+	}
 
 	for _, item := range input.Items {
 		key := fmt.Sprintf("%d_%s", item.ProductID, item.BatchCode)
 		batch, ok := batchMeta[key]
 		if !ok {
-			return nil, 0, 0, 0, 0, 0, fmt.Errorf("batch not found for product %d batch %s", item.ProductID, item.BatchCode)
+			return emptyResult, fmt.Errorf("batch not found for product %d batch %s", item.ProductID, item.BatchCode)
 		}
 
 		available := 0
@@ -522,46 +591,66 @@ func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, repo *rep
 			available += r.ClosingStock
 		}
 		if available < item.Quantity {
-			return nil, 0, 0, 0, 0, 0, fmt.Errorf("requested quantity (%d) for batch (%s) is more than available quantity (%d)", item.Quantity, item.BatchCode, available)
+			return emptyResult, fmt.Errorf("requested quantity (%d) for batch (%s) is more than available quantity (%d)", item.Quantity, item.BatchCode, available)
 		}
 
-		salesRate := batch.MRP
-		if item.SalesRate != nil {
-			salesRate = *item.SalesRate
-		} else if cachedData != nil && cachedData.CalculatedProductData.Products != nil {
-			if p, ok := cachedData.CalculatedProductData.Products[key]; ok {
-				salesRate = p.SalesRate
-			}
+		productCache, err := s.cacheMaster.GetProductCache(ctx, int(item.ProductID))
+		if err != nil {
+			return emptyResult, fmt.Errorf("product cache unavailable for product %d: %w", item.ProductID, err)
 		}
+
+		salesRateResult, err := GetSalesRate(input.OrganizationID, productCache, storeCache, batch.MRP, s.cfg.DefaultOrganizationID, genericPricingMap)
+		if err != nil {
+			return emptyResult, fmt.Errorf("failed to calculate sales rate for product %d: %w", item.ProductID, err)
+		}
+
+		salesRate := salesRateResult.SalesRate
 
 		if salesRate-batch.MRP > 0.1 {
-			return nil, 0, 0, 0, 0, 0, fmt.Errorf("the sales rate of batch (%s) is greater than MRP", item.BatchCode)
+			return emptyResult, fmt.Errorf("the sales rate of batch (%s) is greater than MRP", item.BatchCode)
 		}
 
 		billAmount := round2(float64(item.Quantity) * salesRate)
 		totalLineAmount := round2(float64(item.Quantity) * batch.MRP)
-		discountAmt := round2(batch.MRP - salesRate)
-		discountPct := 0.0
-		if batch.MRP > 0 {
-			discountPct = round2(((batch.MRP - salesRate) / batch.MRP) * 100)
+		discountAmt := round2(salesRateResult.DiscountAmount)
+		discountPct := round2(salesRateResult.DiscountPercentage)
+
+		tax, err := CalculateSalesInvoiceItemTax(storeCache, productCache, billAmount)
+		if err != nil {
+			return emptyResult, fmt.Errorf("tax calculation failed for product %d: %w", item.ProductID, err)
 		}
 
-		lines = append(lines, draftComputedLine{
+		result.TotalBill += billAmount
+		result.TotalAmount += totalLineAmount
+		result.TotalQty += item.Quantity
+		result.TotalGST += tax.TotalGST
+		result.TotalCGST += tax.CGST
+		result.TotalSGST += tax.SGST
+		result.TotalIGST += tax.IGST
+
+		result.Lines = append(result.Lines, draftComputedLine{
 			Item:         item,
 			Batch:        batch,
 			SalesRate:    salesRate,
+			BaseRate:     round2(tax.BaseRate),
 			BillAmount:   billAmount,
 			TotalAmount:  totalLineAmount,
-			DiscountType: "INR",
+			DiscountType: salesRateResult.DiscountType,
 			DiscountAmt:  discountAmt,
 			DiscountPct:  discountPct,
+			GSTPct:       tax.GSTPct,
+			GSTAmount:    round2(tax.TotalGST),
+			CGST:         round2(tax.CGST),
+			SGST:         round2(tax.SGST),
+			IGST:         round2(tax.IGST),
 		})
-		totalBill += billAmount
-		totalAmount += totalLineAmount
-		totalQty += item.Quantity
 	}
 
-	return lines, len(productIDs), len(batchCodes), totalQty, round2(totalBill), round2(totalAmount), nil
+	result.TotalProducts = len(productIDs)
+	result.TotalItems = len(result.Lines)
+	result.TaxableAmount = round2(result.TotalBill - result.TotalGST)
+
+	return result, nil
 }
 
 func (s *SalesInvoiceService) finalizeInvoice(
@@ -571,6 +660,11 @@ func (s *SalesInvoiceService) finalizeInvoice(
 	draft *model.SalesInvoiceDraftJSON,
 	lines []draftComputedLine,
 ) (uint64, error) {
+	var draftPayload salesInvoiceDraftJSONPayload
+	if len(draft.DraftJSON) > 0 {
+		_ = json.Unmarshal(draft.DraftJSON, &draftPayload)
+	}
+
 	invoice := model.SalesInvoice{
 		OrganizationID:        draft.OrganizationID,
 		SalesInvoiceDraftID:   draft.ID,
@@ -581,32 +675,32 @@ func (s *SalesInvoiceService) finalizeInvoice(
 		DoctorID:              draft.DoctorID,
 		PatientID:             draft.PatientID,
 		OrderType:             constants.SalesPaymentTypeSales,
-		IsHomeDelivery:        draft.IsHomeDelivery,
-		TotalBillAmount:       draft.TotalBillAmount,
-		TaxableAmount:         draft.TaxableAmount,
-		TotalAmountBeforeDisc: draft.TotalAmountBeforeDisc,
-		DiscountType:          draft.DiscountType,
-		DiscountPercentage:    draft.DiscountPercentage,
-		DiscountAmount:        draft.DiscountAmount,
-		IGST:                  draft.IGST,
-		CGST:                  draft.CGST,
-		SGST:                  draft.SGST,
+		IsHomeDelivery:        draftPayload.IsHomeDelivery,
+		TotalBillAmount:       draftPayload.TotalBillAmount,
+		TaxableAmount:         draftPayload.TaxableAmount,
+		TotalAmountBeforeDisc: draftPayload.TotalAmount,
+		DiscountType:          "INR",
+		DiscountPercentage:    0,
+		DiscountAmount:        draftPayload.TotalAmount - draftPayload.TotalBillAmount,
+		IGST:                  draftPayload.IGST,
+		CGST:                  draftPayload.CGST,
+		SGST:                  draftPayload.SGST,
 		PrepaidAmount:         draft.PrepaidAmount,
-		TotalGST:              draft.TotalGST,
-		RoundOff:              draft.RoundOff,
+		TotalGST:              draftPayload.TotalGST,
+		RoundOff:              draftPayload.RoundOff,
 		TotalInvoiceAmount:    draft.TotalInvoiceAmount,
-		TotalProducts:         draft.TotalProducts,
-		TotalItems:            draft.TotalItems,
-		TotalQuantity:         draft.TotalQuantity,
-		TotalAmount:           draft.TotalAmount,
+		TotalProducts:         draftPayload.TotalProducts,
+		TotalItems:            draftPayload.TotalItems,
+		TotalQuantity:         draftPayload.TotalQuantity,
+		TotalAmount:           draftPayload.TotalAmount,
 		TotalDiscount:         draft.TotalDiscount,
 		TotalAmountReceived:   draft.TotalAmountReceived,
-		TotalBillBeforePromo:  draft.TotalBillBeforePromo,
-		PromoCode:             draft.PromoCode,
-		Notes:                 draft.Notes,
+		TotalBillBeforePromo:  draftPayload.TotalBillAmountBeforePromo,
+		PromoCode:             draftPayload.PromoCode,
+		Notes:                 draftPayload.Notes,
 		IsActive:              true,
 		CreatedBy:             input.UserID,
-		DeviceMasterID:        draft.DeviceMasterID,
+		DeviceMasterID:        draftPayload.DeviceMasterID,
 		TillID:                draft.TillID,
 		TillTransactionID:     draft.TillTransactionID,
 	}
@@ -621,6 +715,7 @@ func (s *SalesInvoiceService) finalizeInvoice(
 	}
 
 	details := make([]model.SalesInvoiceDetail, 0)
+	txns := make([]model.StoreInventoryTransaction, 0)
 	for _, line := range lines {
 		key := fmt.Sprintf("%d_%s", line.Item.ProductID, line.Item.BatchCode)
 		allocations, err := fulfillBatches(batchStocks[key], line.Item.Quantity, line.Item.ProductID, line.Item.BatchCode)
@@ -639,27 +734,43 @@ func (s *SalesInvoiceService) finalizeInvoice(
 				ExpiryDate:         alloc.ExpiryDate,
 				MRP:                line.Batch.MRP,
 				SalesRate:          line.SalesRate,
-				BaseRate:           line.SalesRate,
+				BaseRate:           line.BaseRate,
 				BillAmount:         round2(float64(alloc.QuantityTaken) * line.SalesRate),
 				Quantity:           alloc.QuantityTaken,
 				DiscountType:       line.DiscountType,
 				DiscountPercentage: line.DiscountPct,
 				DiscountAmount:     line.DiscountAmt,
-				GSTPercentage:      0,
-				GSTAmount:          0,
+				GSTPercentage:      line.GSTPct,
+				GSTAmount:          round2(float64(alloc.QuantityTaken) / float64(line.Item.Quantity) * line.GSTAmount),
 				TotalAmount:        round2(float64(alloc.QuantityTaken) * line.Batch.MRP),
 				CreatedBy:          input.UserID,
 				DeviceMasterID:     input.DeviceMasterID,
 			}
 			details = append(details, detail)
 
-			if err := repo.ReduceInventoryStock(ctx, input.StoreID, line.Item.ProductID, alloc.StoreBatchID, line.Item.BatchCode, alloc.QuantityTaken); err != nil {
-				return 0, err
+			txn := model.StoreInventoryTransaction{
+				StoreID:         input.StoreID,
+				ProductID:       line.Item.ProductID,
+				BatchCode:       line.Item.BatchCode,
+				StoreBatchID:    alloc.StoreBatchID,
+				ExpiryDate:      alloc.ExpiryDate,
+				Quantity:        -alloc.QuantityTaken,
+				Rate:            line.SalesRate,
+				TotalAmount:     round2(float64(-alloc.QuantityTaken) * line.SalesRate),
+				VoucherType:     "SALES_INVOICE",
+				VoucherID:       invoice.ID,
+				CreatedBy:       input.UserID,
+				TransactionTime: time.Now(),
 			}
+			txns = append(txns, txn)
 		}
 	}
 
 	if err := repo.CreateInvoiceDetails(ctx, details); err != nil {
+		return 0, err
+	}
+
+	if err := repo.InsertInventoryTransactions(ctx, txns); err != nil {
 		return 0, err
 	}
 
@@ -732,10 +843,10 @@ func (s *SalesInvoiceService) linesToProductsMap(lines []draftComputedLine) map[
 			ExpiryDate:         l.Batch.ExpiryDate.Format(time.DateOnly),
 			MRP:                l.Batch.MRP,
 			SalesRate:          l.SalesRate,
-			BaseRate:           l.SalesRate,
+			BaseRate:           l.BaseRate,
 			Quantity:           l.Item.Quantity,
-			GSTPercentage:      0,
-			GSTAmount:          0,
+			GSTPercentage:      l.GSTPct,
+			GSTAmount:          l.GSTAmount,
 			BillAmount:         l.BillAmount,
 			DiscountType:       l.DiscountType,
 			DiscountAmount:     l.DiscountAmt,
@@ -748,11 +859,12 @@ func (s *SalesInvoiceService) linesToProductsMap(lines []draftComputedLine) map[
 }
 
 func (s *SalesInvoiceService) buildDraftResponse(draft model.SalesInvoiceDraftJSON, items []draftProductJSON, payments []model.SalesInvoiceDraftPayment) draftResponse {
+	var payload salesInvoiceDraftJSONPayload
+	if len(draft.DraftJSON) > 0 {
+		_ = json.Unmarshal(draft.DraftJSON, &payload)
+	}
 	if items == nil {
-		var payload salesInvoiceDraftJSONPayload
-		if err := json.Unmarshal(draft.DraftJSON, &payload); err == nil {
-			items = payload.Products
-		}
+		items = payload.Products
 	}
 	pRes := make([]draftPaymentResp, 0, len(payments))
 	for _, p := range payments {
@@ -762,23 +874,23 @@ func (s *SalesInvoiceService) buildDraftResponse(draft model.SalesInvoiceDraftJS
 	return draftResponse{
 		ID:                   draft.ID,
 		OrganizationID:       draft.OrganizationID,
-		IsHomeDelivery:       draft.IsHomeDelivery,
-		TotalProducts:        draft.TotalProducts,
-		TotalItems:           draft.TotalItems,
-		TotalQuantity:        draft.TotalQuantity,
+		IsHomeDelivery:       payload.IsHomeDelivery,
+		TotalProducts:        payload.TotalProducts,
+		TotalItems:           payload.TotalItems,
+		TotalQuantity:        payload.TotalQuantity,
 		PrepaidAmount:        round2(draft.PrepaidAmount),
 		TotalInvoiceAmount:   round2(draft.TotalInvoiceAmount),
 		TotalAmountReceived:  round2(draft.TotalAmountReceived),
 		AmountDue:            round2(draft.TotalInvoiceAmount - draft.PrepaidAmount - draft.TotalAmountReceived),
-		DeliveryCharges:      0,
+		DeliveryCharges:      payload.DeliveryCharges,
 		TotalMRP:             round2(draft.TotalAmount),
 		TotalSavings:         round2(draft.TotalDiscount),
-		TaxableAmount:        round2(draft.TaxableAmount),
+		TaxableAmount:        round2(payload.TaxableAmount),
 		Status:               draft.Status,
 		PaymentStatus:        draft.PaymentStatus,
-		RoundOff:             round2(draft.RoundOff),
-		TotalBillBeforePromo: round2(draft.TotalBillBeforePromo),
-		PromoCode:            draft.PromoCode,
+		RoundOff:             round2(payload.RoundOff),
+		TotalBillBeforePromo: round2(payload.TotalBillAmountBeforePromo),
+		PromoCode:            payload.PromoCode,
 		Items:                items,
 		Payments:             pRes,
 	}
@@ -793,16 +905,20 @@ func mapLinesToDraftProducts(lines []draftComputedLine) []draftProductJSON {
 			ExpiryDate:         l.Batch.ExpiryDate.Format(time.DateOnly),
 			MRP:                l.Batch.MRP,
 			SalesRate:          l.SalesRate,
-			BaseRate:           l.SalesRate,
+			BaseRate:           l.BaseRate,
 			Quantity:           l.Item.Quantity,
-			GSTPercentage:      0,
-			GSTAmount:          0,
+			GSTPercentage:      l.GSTPct,
+			GSTAmount:          l.GSTAmount,
 			BillAmount:         l.BillAmount,
 			DiscountType:       l.DiscountType,
 			DiscountAmount:     l.DiscountAmt,
-			DiscountPercentage: l.DiscountPct,
-			IsFreeProduct:      l.Item.IsFreeProduct,
-			ComboProductID:     l.Item.ComboProductID,
+			DiscountPercentage:            l.DiscountPct,
+			IsFreeProduct:                 l.Item.IsFreeProduct,
+			ComboProductID:                l.Item.ComboProductID,
+			TotalAmount:                   round2(l.Batch.MRP * float64(l.Item.Quantity)),
+			SalesRateBeforePromo:          l.SalesRate,
+			DiscountAmountBeforePromo:     l.DiscountAmt,
+			DiscountPercentageBeforePromo: l.DiscountPct,
 		})
 	}
 	return products

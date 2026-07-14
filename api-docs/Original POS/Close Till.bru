@@ -1,0 +1,84 @@
+meta {
+  name: Close Till
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{store_pos_url}}/till/transaction/change-status
+  body: json
+  auth: bearer
+}
+
+headers {
+  device: {{device_token}}
+  store: {{store_id}}
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+body:json {
+  {
+      "status": "CLOSE",
+      "float_cash": true,
+      "Cash": [
+          {
+              "denomination": 500,
+              "value": 3
+          },
+          {
+              "denomination": 200,
+              "value": 1
+          },
+          {
+              "denomination": 100,
+              "value": 0
+          },
+          {
+              "denomination": 50,
+              "value": 0
+          },
+          {
+              "denomination": 20,
+              "value": 0
+          },
+          {
+              "denomination": 10,
+              "value": 0
+          },
+          {
+              "denomination": 5,
+              "value": 0
+          },
+          {
+              "denomination": 2,
+              "value": 0
+          },
+          {
+              "denomination": 1,
+              "value": 0
+          }
+      ],
+      "remarks": "",
+      "UPI": {
+          "amount": 0
+      },
+      "Cards": {
+          "amount": 0
+      },
+      "closed_by": 859
+  }
+}
+
+vars:pre-request {
+  store_pos_url: http://localhost:8000/api/v1
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+  followRedirects: false
+  maxRedirects: 5
+}

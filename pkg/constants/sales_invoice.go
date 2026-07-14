@@ -12,3 +12,9 @@ const (
 	SalesPaymentTypeSales         = "SALES"
 	SalesPaymentTypeAdvanceRefund = "ADVANCE_REFUND"
 )
+
+const (
+	GstTreatmentRegular      = "Regular"
+	GstTreatmentUnregistered = "Unregistered"
+	GstTreatmentComposition  = "Composition"
+)

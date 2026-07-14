@@ -79,7 +79,6 @@ func (h *SalesInvoiceHandler) createOrUpdate(c *gin.Context, id *uint64) {
 			ProductID:      it.ProductID,
 			BatchCode:      it.BatchCode,
 			Quantity:       it.Quantity,
-			SalesRate:      it.SalesRate,
 			IsFreeProduct:  it.IsFreeProduct,
 			ComboProductID: it.ComboProductID,
 		})

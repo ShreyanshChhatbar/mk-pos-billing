@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/justkeval/go-phpserialize"
 	"github.com/redis/go-redis/v9"
-	"github.com/trim21/go-phpserialize"
 )
 
 // Service wraps Redis operations with namespaced key helpers.

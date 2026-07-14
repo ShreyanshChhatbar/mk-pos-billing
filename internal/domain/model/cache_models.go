@@ -52,7 +52,7 @@ type UserAuthCache struct {
 	UserID      int                            `php:"user_id"`
 	AuthToken   string                         `php:"auth_token"`
 	DeviceToken string                         `php:"device_token"`
-	StoreID     int                            `php:"store_id"`
+	StoreID     string                         `php:"store_id"`
 	Permissions map[string]map[string][]string `php:"permissions"`
 }
 
@@ -80,18 +80,18 @@ type StoreSettingsCache struct {
 	IsMinMaxOrderEnabled             bool              `php:"is_min_max_order_enabled"`
 	IsMinMaxDropshipOrderEnabled     bool              `php:"is_min_max_dropship_order_enabled"`
 	BankMasters                      []BankMasterCache `php:"bank_masters"`
-	UrgentOrderTime                  string            `php:"urgent_order_time"`
+	UrgentOrderTime                  *string           `php:"urgent_order_time"`
 }
 
 type ProductCategoryDiscountCache struct {
-	ID                   int      `php:"id"`
-	B2CPricingTemplateID int      `php:"b_2_c_pricing_template_id"`
-	CategoryID           int      `php:"category_id"`
-	PricingCategory      string   `php:"pricing_category"`
-	Mode                 string   `php:"mode"`
-	Value                float64  `php:"value"`
-	Operator             string   `php:"operator"`
-	PromoCodes           []string `php:"promo_codes"` // Optional based on mapping
+	ID                   int     `php:"id"`
+	B2CPricingTemplateID int     `php:"b_2_c_pricing_template_id"`
+	CategoryID           int     `php:"category_id"`
+	PricingCategory      string  `php:"pricing_category"`
+	Mode                 string  `php:"mode"`
+	Value                float64 `php:"value"`
+	Operator             string  `php:"operator"`
+	// PromoCodes           []string `php:"promo_codes"` // Optional based on mapping
 }
 
 type B2BProductCategoryDiscountCache struct {
@@ -147,7 +147,7 @@ type StoreCache struct {
 	WsAlternateCode                        string                                     `php:"ws_alternate_code"`
 	IsLoyaltyEnrolled                      bool                                       `php:"is_loyalty_enrolled"`
 	WmsStoreID                             int                                        `php:"wms_store_id"`
-	WsStoreID                              int                                        `php:"ws_store_id"`
+	WsStoreID                              string                                     `php:"ws_store_id"`
 	ProductCategoriesDiscounts             map[int]ProductCategoryDiscountCache       `php:"product_categories_discounts"`
 	B2BProductCategoriesDiscounts          map[string]B2BProductCategoryDiscountCache `php:"b2b_product_categories_discounts"`
 	OrganizationProductCategoriesDiscounts map[int]map[int]OrgCategoryDiscountCache   `php:"organization_product_categories_discounts"`
@@ -161,7 +161,7 @@ type StoreCache struct {
 	StoreManagerDetails                    []StoreManagerCache                        `php:"store_manager_details"`
 	IsPosApplicable                        bool                                       `php:"is_pos_applicable"`
 	GstTreatment                           string                                     `php:"gst_treatment"`
-	CinNumber                              string                                     `php:"cin_number"`
+	CinNumber                              *string                                    `php:"cin_number"`
 	StoreSettings                          StoreSettingsCache                         `php:"store_settings"`
 	IsWhatsappBillApplicable               bool                                       `php:"is_whatsapp_bill_applicable"`
 	IsActive                               bool                                       `php:"is_active"`
