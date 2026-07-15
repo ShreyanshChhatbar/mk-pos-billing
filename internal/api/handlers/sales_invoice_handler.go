@@ -39,7 +39,7 @@ func (h *SalesInvoiceHandler) UpdateSalesInvoice(c *gin.Context) {
 func (h *SalesInvoiceHandler) createOrUpdate(c *gin.Context, id *uint64) {
 	body := validation.GetValidBodyData[request.CreateOrUpdateSalesInvoiceRequest](c)
 
-	posCtx, ok := h.posContext(c)
+	posCtx, ok := middleware.GetPOSContext(c)
 	if !ok {
 		return
 	}
@@ -108,40 +108,6 @@ func (h *SalesInvoiceHandler) createOrUpdate(c *gin.Context, id *uint64) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "data": result.Data, "message": result.Message})
-}
-
-type posContext struct {
-	StoreID           uint64
-	UserID            uint64
-	DeviceMasterID    *uint64
-	TillID            *uint64
-	TillTransactionID *uint64
-}
-
-func (h *SalesInvoiceHandler) posContext(c *gin.Context) (posContext, bool) {
-	storeID, ok := middleware.POSStoreID(c)
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "type": "Bad Request", "message": "Store Not Found"})
-		return posContext{}, false
-	}
-
-	userID, ok := middleware.POSUserID(c)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "Invalid User Token: Unauthorized"})
-		return posContext{}, false
-	}
-
-	deviceMasterID, _ := middleware.POSDeviceMasterID(c)
-	tillID, _ := middleware.POSTillID(c)
-	tillTransactionID, _ := middleware.POSTillTransactionID(c)
-
-	return posContext{
-		StoreID:           storeID,
-		UserID:            userID,
-		DeviceMasterID:    deviceMasterID,
-		TillID:            tillID,
-		TillTransactionID: tillTransactionID,
-	}, true
 }
 
 func mapCreateSalesInvoiceError(err error) int {

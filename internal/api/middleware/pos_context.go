@@ -91,3 +91,36 @@ func contextUint64(c *gin.Context, key string) (uint64, bool) {
 	val, ok := v.(uint64)
 	return val, ok
 }
+
+type POSContext struct {
+	StoreID           uint64
+	UserID            uint64
+	DeviceMasterID    *uint64
+	TillID            *uint64
+	TillTransactionID *uint64
+}
+
+// GetPOSContext extracts all POS-related context variables set by various middlewares.
+func GetPOSContext(c *gin.Context) (POSContext, bool) {
+	storeID, ok := POSStoreID(c)
+	if !ok {
+		return POSContext{}, false
+	}
+
+	userID, ok := POSUserID(c)
+	if !ok {
+		return POSContext{}, false
+	}
+
+	deviceMasterID, _ := POSDeviceMasterID(c)
+	tillID, _ := POSTillID(c)
+	tillTransactionID, _ := POSTillTransactionID(c)
+
+	return POSContext{
+		StoreID:           storeID,
+		UserID:            userID,
+		DeviceMasterID:    deviceMasterID,
+		TillID:            tillID,
+		TillTransactionID: tillTransactionID,
+	}, true
+}
