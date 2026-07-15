@@ -62,11 +62,11 @@ func (r *SalesInvoiceRepository) GetDraftByID(ctx context.Context, id, storeID, 
 }
 
 func (r *SalesInvoiceRepository) SaveDraft(ctx context.Context, draft *model.SalesInvoiceDraftJSON) error {
-	return r.WithContext(ctx).Save(draft).Error
+	return r.WithContext(ctx).Omit("InvoiceNumber").Updates(draft).Error
 }
 
 func (r *SalesInvoiceRepository) CreateDraft(ctx context.Context, draft *model.SalesInvoiceDraftJSON) error {
-	return r.WithContext(ctx).Create(draft).Error
+	return r.WithContext(ctx).Omit("InvoiceNumber").Create(draft).Error
 }
 
 func (r *SalesInvoiceRepository) ReplaceDraftPayments(ctx context.Context, draftID uint64, payments []model.SalesInvoiceDraftPayment, deletedBy uint64) error {
@@ -162,12 +162,12 @@ func (r *SalesInvoiceRepository) FetchBatchStocks(ctx context.Context, storeID u
 	return grouped, nil
 }
 
-func (r *SalesInvoiceRepository) FetchGenericPricings(ctx context.Context, templateIDs []uint64, productIDs []uint64) (map[string]model.B2CGenericPricing, error) {
+func (r *SalesInvoiceRepository) FetchGenericPricings(ctx context.Context, templateIDs []uint64, productIDs []uint64) (map[string]model.B2CStoreTemplateGenericPricing, error) {
 	if len(templateIDs) == 0 || len(productIDs) == 0 {
-		return map[string]model.B2CGenericPricing{}, nil
+		return map[string]model.B2CStoreTemplateGenericPricing{}, nil
 	}
 
-	var pricings []model.B2CGenericPricing
+	var pricings []model.B2CStoreTemplateGenericPricing
 	if err := r.WithContext(ctx).
 		Where("b_2_c_pricing_template_id IN ?", templateIDs).
 		Where("product_id IN ?", productIDs).
@@ -176,7 +176,7 @@ func (r *SalesInvoiceRepository) FetchGenericPricings(ctx context.Context, templ
 		return nil, err
 	}
 
-	pricingMap := make(map[string]model.B2CGenericPricing, len(pricings))
+	pricingMap := make(map[string]model.B2CStoreTemplateGenericPricing, len(pricings))
 	for _, p := range pricings {
 		key := fmt.Sprintf("%d:%d", p.B2CPricingTemplateID, p.ProductID)
 		pricingMap[key] = p

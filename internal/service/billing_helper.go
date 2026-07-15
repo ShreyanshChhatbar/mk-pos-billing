@@ -85,7 +85,7 @@ func GetSalesRate(
 	store *model.StoreCache,
 	mrp float64,
 	defaultOrgID uint64,
-	genericPricingMap map[string]model.B2CGenericPricing,
+	genericPricingMap map[string]model.B2CStoreTemplateGenericPricing,
 ) (SalesRateResult, error) {
 
 	// In Laravel, Combo Products are checked first (omitted here as per Laravel logic if isComboProduct=false).

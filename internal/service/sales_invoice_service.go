@@ -150,6 +150,7 @@ type draftComputedLine struct {
 	CGST         float64
 	SGST         float64
 	IGST         float64
+	HSNCode      string
 }
 
 type DraftCalculationResult struct {
@@ -643,6 +644,7 @@ func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, repo *rep
 			CGST:         round2(tax.CGST),
 			SGST:         round2(tax.SGST),
 			IGST:         round2(tax.IGST),
+			HSNCode:      productCache.HsnCode,
 		})
 	}
 
@@ -771,6 +773,8 @@ func (s *SalesInvoiceService) finalizeInvoice(
 				TotalAmount:        round2(float64(alloc.QuantityTaken) * line.Batch.MRP),
 				CreatedBy:          input.UserID,
 				DeviceMasterID:     input.DeviceMasterID,
+				HSNCode:            &line.HSNCode,
+				IsFreeProduct:      &line.Item.IsFreeProduct,
 			}
 			details = append(details, detail)
 
