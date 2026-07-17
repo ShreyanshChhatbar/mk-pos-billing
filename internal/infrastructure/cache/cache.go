@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"github.com/justkeval/go-phpserialize"
 	"github.com/redis/go-redis/v9"
 )
+
+var ErrKeyNotFound = errors.New("key not found")
 
 // Service wraps Redis operations with namespaced key helpers.
 type Service struct {
@@ -72,7 +75,14 @@ func (s *Service) Add(ctx context.Context, key string, value interface{}, ttl ti
 }
 
 func (s *Service) Get(ctx context.Context, key string) (string, error) {
-	return s.client.Get(ctx, key).Result()
+	res, err := s.client.Get(ctx, key).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", ErrKeyNotFound
+		}
+		return "", err
+	}
+	return res, nil
 }
 
 func (s *Service) Delete(ctx context.Context, key string) error {
@@ -92,6 +102,9 @@ func (s *Service) SetJSON(ctx context.Context, key string, value interface{}, tt
 func (s *Service) GetJSON(ctx context.Context, key string, dest interface{}) error {
 	data, err := s.client.Get(ctx, key).Bytes()
 	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return ErrKeyNotFound
+		}
 		return err
 	}
 	return json.Unmarshal(data, dest)
@@ -108,6 +121,9 @@ func (s *Service) SetPHPSerialized(ctx context.Context, key string, value interf
 func (s *Service) GetPHPSerialized(ctx context.Context, key string, dest interface{}) error {
 	data, err := s.client.Get(ctx, key).Bytes()
 	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return ErrKeyNotFound
+		}
 		return err
 	}
 	return phpserialize.Unmarshal(data, dest)
