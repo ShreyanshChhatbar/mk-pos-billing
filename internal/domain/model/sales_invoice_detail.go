@@ -28,13 +28,11 @@ type SalesInvoiceDetail struct {
 	TotalAmount            float64        `gorm:"column:total_amount"`
 	EffectiveQuantity      *int           `gorm:"column:effective_quantity"`
 	VoucherDiscountAmount  *float64       `gorm:"column:voucher_discount_amount"`
-	AmountBeforeDiscount   *float64       `gorm:"column:amount_before_discount"`
+	AmountBeforeDiscount   float64        `gorm:"column:amount_before_discount"`
 	LoyaltyPoints          *float64       `gorm:"column:loyalty_points"`
 	LoyaltyProgramDiscount *float64       `gorm:"column:loyalty_program_discount"`
 	SalesRateBeforePromo   *float64       `gorm:"column:sales_rate_before_promo"`
 	IsAdvanceOrder         *bool          `gorm:"column:is_advance_order"`
-	TillTransactionID      *uint64        `gorm:"column:till_transaction_id"`
-	TillID                 *uint64        `gorm:"column:till_id"`
 	IsDropshipOrder        *bool          `gorm:"column:is_dropship_order"`
 	HSNCode                *string        `gorm:"column:hsn_code"`
 	IsFreeProduct          *bool          `gorm:"column:is_free_product"`

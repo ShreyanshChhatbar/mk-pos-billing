@@ -29,7 +29,22 @@ func InitializeServerApp() (*ServerApp, error) {
 	cacheMasterService := service.NewCacheMasterService(cacheService, cachePrefixesCfg, cacheTagsCfg, cacheExpiryCfg)
 
 	salesInvoiceRepo := repository.NewSalesInvoiceRepository(db)
-	salesInvoiceService := service.NewSalesInvoiceService(salesInvoiceRepo, cacheService, salesCfg, cacheMasterService)
+	draftRepo := repository.NewSalesInvoiceDraftRepository(db)
+	inventoryRepo := repository.NewStoreInventoryRepository(db)
+	masterRepo := repository.NewMasterDataRepository(db)
+	productRepo := repository.NewProductRepository(db)
+	txManager := repository.NewTransactionManager(db)
+	salesInvoiceService := service.NewSalesInvoiceService(
+		salesInvoiceRepo,
+		draftRepo,
+		inventoryRepo,
+		productRepo,
+		masterRepo,
+		cacheService,
+		salesCfg,
+		cacheMasterService,
+		txManager,
+	)
 	salesInvoiceHandler := handlers.NewSalesInvoiceHandler(salesInvoiceService, salesCfg)
 	duplicateRequestMiddleware := middleware.NewDuplicateRequestMiddleware(cacheService, salesCfg)
 

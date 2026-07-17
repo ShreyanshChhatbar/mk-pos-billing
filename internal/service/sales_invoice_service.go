@@ -14,8 +14,6 @@ import (
 	"sort"
 	"strconv"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 var ErrValidation = errors.New("validation error")
@@ -136,21 +134,22 @@ type salesInvoiceDraftJSONPayload struct {
 }
 
 type draftComputedLine struct {
-	Item         CreateOrUpdateSalesInvoiceItem
-	Batch        model.Batch
-	SalesRate    float64
-	BaseRate     float64
-	BillAmount   float64
-	TotalAmount  float64
-	DiscountType string
-	DiscountAmt  float64
-	DiscountPct  float64
-	GSTPct       float64
-	GSTAmount    float64
-	CGST         float64
-	SGST         float64
-	IGST         float64
-	HSNCode      string
+	Item                CreateOrUpdateSalesInvoiceItem
+	Batch               model.Batch
+	SalesRate           float64
+	SalesRateBeforePromo float64
+	BaseRate            float64
+	BillAmount          float64
+	TotalAmount         float64
+	DiscountType        string
+	DiscountAmt         float64
+	DiscountPct         float64
+	GSTPct              float64
+	GSTAmount           float64
+	CGST                float64
+	SGST                float64
+	IGST                float64
+	HSNCode             string
 }
 
 type DraftCalculationResult struct {
@@ -209,14 +208,39 @@ type draftPaymentResp struct {
 }
 
 type SalesInvoiceService struct {
-	repo        *repository.SalesInvoiceRepository
-	cache       *cache.Service
-	cfg         config.SalesInvoiceConfig
-	cacheMaster CacheMasterService
+	invoiceRepo   *repository.SalesInvoiceRepository
+	draftRepo     *repository.SalesInvoiceDraftRepository
+	inventoryRepo *repository.StoreInventoryRepository
+	productRepo   *repository.ProductRepository
+	masterRepo    *repository.MasterDataRepository
+	cache         *cache.Service
+	cfg           config.SalesInvoiceConfig
+	cacheMaster   CacheMasterService
+	txManager     repository.TransactionManager
 }
 
-func NewSalesInvoiceService(repo *repository.SalesInvoiceRepository, cacheService *cache.Service, cfg config.SalesInvoiceConfig, cacheMaster CacheMasterService) *SalesInvoiceService {
-	return &SalesInvoiceService{repo: repo, cache: cacheService, cfg: cfg, cacheMaster: cacheMaster}
+func NewSalesInvoiceService(
+	invoiceRepo *repository.SalesInvoiceRepository,
+	draftRepo *repository.SalesInvoiceDraftRepository,
+	inventoryRepo *repository.StoreInventoryRepository,
+	productRepo *repository.ProductRepository,
+	masterRepo *repository.MasterDataRepository,
+	cacheService *cache.Service,
+	cfg config.SalesInvoiceConfig,
+	cacheMaster CacheMasterService,
+	txManager repository.TransactionManager,
+) *SalesInvoiceService {
+	return &SalesInvoiceService{
+		invoiceRepo:   invoiceRepo,
+		draftRepo:     draftRepo,
+		inventoryRepo: inventoryRepo,
+		productRepo:   productRepo,
+		masterRepo:    masterRepo,
+		cache:         cacheService,
+		cfg:           cfg,
+		cacheMaster:   cacheMaster,
+		txManager:     txManager,
+	}
 }
 
 func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOrUpdateSalesInvoiceInput) (*CreateOrUpdateSalesInvoiceOutput, error) {
@@ -227,28 +251,31 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 	}
 
 	var out *CreateOrUpdateSalesInvoiceOutput
-	err := s.repo.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		txRepo := s.repo.Tx(tx)
+	err := s.txManager.Do(ctx, func(tx repository.Transaction) error {
+		txDraftRepo := s.draftRepo.Tx(tx)
+		txInvoiceRepo := s.invoiceRepo.Tx(tx)
+		txInventoryRepo := s.inventoryRepo.Tx(tx)
+		txProductRepo := s.productRepo.Tx(tx)
 		cacheKey, cacheTag, combinedCacheKey := s.buildDraftCacheKeys(input.StoreID, input.ID)
 
 		cachedData, _ := s.getDraftCache(ctx, combinedCacheKey)
 
-		draft, err := s.loadOrCreateDraft(ctx, txRepo, input, cachedData)
+		draft, err := s.loadOrCreateDraft(ctx, txDraftRepo, input, cachedData)
 		if err != nil {
 			return err
 		}
 
 		if input.ID != nil && !input.ItemsPresent {
-			existingPayments, err := txRepo.GetDraftPayments(ctx, draft.ID)
+			existingPayments, err := txDraftRepo.GetDraftPayments(ctx, draft.ID)
 			if err != nil {
 				return err
 			}
 			_, draftPayments := buildDraftPayments(input, draft.ID)
-			if err := txRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
+			if err := txDraftRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
 				return err
 			}
 			if len(draftPayments) > 0 {
-				existingPayments, err = txRepo.GetDraftPayments(ctx, draft.ID)
+				existingPayments, err = txDraftRepo.GetDraftPayments(ctx, draft.ID)
 				if err != nil {
 					return err
 				}
@@ -280,7 +307,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			draft.Status = resolveDraftStatus(len(existingPayments) > 0 || len(draftPayments) > 0)
 			draft.PaymentStatus = resolvePaymentStatus(draft.TotalAmountReceived, 0)
 			draft.UpdatedBy = &input.UserID
-			if err := txRepo.SaveDraft(ctx, draft); err != nil {
+			if err := txDraftRepo.SaveDraft(ctx, draft); err != nil {
 				return err
 			}
 
@@ -291,7 +318,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			return nil
 		}
 
-		calcResult, err := s.calculateDraftLines(ctx, txRepo, input, cachedData)
+		calcResult, err := s.calculateDraftLines(ctx, txInventoryRepo, txProductRepo, input, cachedData)
 		if err != nil {
 			return err
 		}
@@ -300,7 +327,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		roundOff := totalInvoice - calcResult.TotalBill
 		totalDiscount := calcResult.TotalAmount - calcResult.TotalBill
 
-		existingPayments, err := txRepo.GetDraftPayments(ctx, draft.ID)
+		existingPayments, err := txDraftRepo.GetDraftPayments(ctx, draft.ID)
 		if err != nil {
 			return err
 		}
@@ -368,14 +395,14 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		if draft.ID == 0 {
 			draft.CreatedBy = input.UserID
 			draft.CreatedAt = now
-			if err := txRepo.CreateDraft(ctx, draft); err != nil {
+			if err := txDraftRepo.CreateDraft(ctx, draft); err != nil {
 				return err
 			}
 			cacheKey, _, combinedCacheKey = s.buildDraftCacheKeys(input.StoreID, &draft.ID)
 			_ = cacheKey
 			_ = cacheTag
 		} else {
-			if err := txRepo.SaveDraft(ctx, draft); err != nil {
+			if err := txDraftRepo.SaveDraft(ctx, draft); err != nil {
 				return err
 			}
 		}
@@ -383,11 +410,11 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		for i := range draftPayments {
 			draftPayments[i].SalesInvoiceDraftID = draft.ID
 		}
-		if err := txRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
+		if err := txDraftRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
 			return err
 		}
 
-		persistedPayments, _ := txRepo.GetDraftPayments(ctx, draft.ID)
+		persistedPayments, _ := txDraftRepo.GetDraftPayments(ctx, draft.ID)
 		cacheData := draftCacheData{
 			SalesInvoiceDraft:     *draft,
 			CalculatedProductData: draftCalculatedProductContainer{Products: s.linesToProductsMap(calcResult.Lines)},
@@ -408,7 +435,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			return fmt.Errorf("entered amount is more then the bill amount, please enter proper amount")
 		}
 
-		invoiceID, err := s.finalizeInvoice(ctx, txRepo, input, draft, calcResult.Lines)
+		invoiceID, err := s.finalizeInvoice(ctx, txInvoiceRepo, txInventoryRepo, txDraftRepo, input, draft, calcResult.Lines)
 		if err != nil {
 			return err
 		}
@@ -429,31 +456,31 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 }
 
 func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrUpdateSalesInvoiceInput) error {
-	if !s.repo.ExistsActiveUser(ctx, input.BillingUserID) {
+	if !s.masterRepo.ExistsActiveUser(ctx, input.BillingUserID) {
 		return errors.New("billing_user_id is invalid")
 	}
 
 	hasPayments := len(input.Payments) > 0
 	if derefBool(input.IsConfirmed) || hasPayments {
-		if input.CustomerID == nil || !s.repo.ExistsActiveCustomer(ctx, *input.CustomerID) {
+		if input.CustomerID == nil || !s.masterRepo.ExistsActiveCustomer(ctx, *input.CustomerID) {
 			return errors.New("customer_id is invalid")
 		}
 	}
 
 	if derefBool(input.IsConfirmed) {
-		if input.PatientID == nil || input.CustomerID == nil || !s.repo.ExistsPatientForCustomer(ctx, *input.PatientID, *input.CustomerID) {
+		if input.PatientID == nil || input.CustomerID == nil || !s.masterRepo.ExistsPatientForCustomer(ctx, *input.PatientID, *input.CustomerID) {
 			return errors.New("patient_id is invalid for customer")
 		}
 	}
 
 	if hasPayments {
-		if input.DoctorID == nil || !s.repo.ExistsDoctor(ctx, *input.DoctorID) {
+		if input.DoctorID == nil || !s.masterRepo.ExistsDoctor(ctx, *input.DoctorID) {
 			return errors.New("doctor_id is invalid")
 		}
 	}
 
 	if hasPayments && derefBool(input.IsHomeDelivery) {
-		if input.CustomerAddressID == nil || input.CustomerID == nil || !s.repo.ExistsCustomerAddress(ctx, *input.CustomerAddressID, *input.CustomerID, true) {
+		if input.CustomerAddressID == nil || input.CustomerID == nil || !s.masterRepo.ExistsCustomerAddress(ctx, *input.CustomerAddressID, *input.CustomerID, true) {
 			return errors.New("customer_address_id is invalid")
 		}
 	}
@@ -473,14 +500,14 @@ func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrU
 			return errors.New("items." + strconv.Itoa(i) + ".batch_code length is invalid")
 		}
 
-		if !s.repo.ExistsActiveProduct(ctx, item.ProductID) {
+		if !s.productRepo.ExistsActiveProduct(ctx, item.ProductID) {
 			return errors.New("items." + strconv.Itoa(i) + ".product_id is invalid")
 		}
-		if !s.repo.ExistsBatchCode(ctx, item.BatchCode) {
+		if !s.productRepo.ExistsBatchCode(ctx, item.BatchCode) {
 			return errors.New("items." + strconv.Itoa(i) + ".batch_code is invalid")
 		}
 
-		pData, err := s.repo.GetProductValidationData(ctx, item.ProductID)
+		pData, err := s.productRepo.GetProductValidationData(ctx, item.ProductID)
 		if err != nil {
 			return err
 		}
@@ -504,45 +531,45 @@ func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrU
 		productIDs = append(productIDs, item.ProductID)
 	}
 
-	if derefBool(input.IsConfirmed) && s.repo.HasNarcoticsProduct(ctx, productIDs, s.cfg.NarcoticsProductScheduledType) {
+	if derefBool(input.IsConfirmed) && s.productRepo.HasNarcoticsProduct(ctx, productIDs, s.cfg.NarcoticsProductScheduledType) {
 		if input.CourseDays == nil {
 			return errors.New("course_days is required for narcotics products")
 		}
 	}
 
 	for i, p := range input.Payments {
-		if !s.repo.ExistsStorePaymentMethod(ctx, p.StorePaymentMethodID, input.StoreID, input.OrganizationID) {
+		if !s.masterRepo.ExistsStorePaymentMethod(ctx, p.StorePaymentMethodID, input.StoreID, input.OrganizationID) {
 			return errors.New("payments." + strconv.Itoa(i) + ".store_payment_method_id is invalid")
 		}
 	}
 
-	if input.ASMUserID != nil && !s.repo.ExistsActiveUser(ctx, *input.ASMUserID) {
+	if input.ASMUserID != nil && !s.masterRepo.ExistsActiveUser(ctx, *input.ASMUserID) {
 		return errors.New("invalid passkey")
 	}
 
 	return nil
 }
-func (s *SalesInvoiceService) loadOrCreateDraft(ctx context.Context, repo *repository.SalesInvoiceRepository, input CreateOrUpdateSalesInvoiceInput, cachedData *draftCacheData) (*model.SalesInvoiceDraftJSON, error) {
+func (s *SalesInvoiceService) loadOrCreateDraft(ctx context.Context, draftRepo *repository.SalesInvoiceDraftRepository, input CreateOrUpdateSalesInvoiceInput, cachedData *draftCacheData) (*model.SalesInvoiceDraftJSON, error) {
 	if cachedData != nil && cachedData.SalesInvoiceDraft.ID != 0 {
 		draft := cachedData.SalesInvoiceDraft
 		return &draft, nil
 	}
 
 	if input.ID != nil && *input.ID > 0 {
-		return repo.GetDraftByID(ctx, *input.ID, input.StoreID, input.OrganizationID)
+		return draftRepo.GetDraftByID(ctx, *input.ID, input.StoreID, input.OrganizationID)
 	}
 	return &model.SalesInvoiceDraftJSON{}, nil
 }
 
-func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, repo *repository.SalesInvoiceRepository, input CreateOrUpdateSalesInvoiceInput, cachedData *draftCacheData) (DraftCalculationResult, error) {
+func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, inventoryRepo *repository.StoreInventoryRepository, productRepo *repository.ProductRepository, input CreateOrUpdateSalesInvoiceInput, cachedData *draftCacheData) (DraftCalculationResult, error) {
 	var emptyResult DraftCalculationResult
 
 	productIDs, batchCodes := extractUniqueFromItems(input.Items)
-	batchMeta, err := repo.FetchBatchMeta(ctx, productIDs, batchCodes)
+	batchMeta, err := productRepo.FetchBatchMeta(ctx, productIDs, batchCodes)
 	if err != nil {
 		return emptyResult, err
 	}
-	stockRows, err := repo.FetchBatchStocks(ctx, input.StoreID, productIDs, batchCodes, false, s.batchExpiryCutoff())
+	stockRows, err := inventoryRepo.FetchBatchStocks(ctx, input.StoreID, productIDs, batchCodes, false, s.batchExpiryCutoff())
 	if err != nil {
 		return emptyResult, err
 	}
@@ -571,7 +598,7 @@ func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, repo *rep
 		}
 	}
 
-	genericPricingMap, err := repo.FetchGenericPricings(ctx, templateIDs, genericProductIDs)
+	genericPricingMap, err := productRepo.FetchGenericPricings(ctx, templateIDs, genericProductIDs)
 	if err != nil {
 		return emptyResult, fmt.Errorf("failed to fetch generic pricings: %w", err)
 	}
@@ -630,21 +657,22 @@ func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, repo *rep
 		result.TotalIGST += tax.IGST
 
 		result.Lines = append(result.Lines, draftComputedLine{
-			Item:         item,
-			Batch:        batch,
-			SalesRate:    salesRate,
-			BaseRate:     round2(tax.BaseRate),
-			BillAmount:   billAmount,
-			TotalAmount:  totalLineAmount,
-			DiscountType: salesRateResult.DiscountType,
-			DiscountAmt:  discountAmt,
-			DiscountPct:  discountPct,
-			GSTPct:       tax.GSTPct,
-			GSTAmount:    round2(tax.TotalGST),
-			CGST:         round2(tax.CGST),
-			SGST:         round2(tax.SGST),
-			IGST:         round2(tax.IGST),
-			HSNCode:      productCache.HsnCode,
+			Item:                 item,
+			Batch:                batch,
+			SalesRate:            salesRate,
+			SalesRateBeforePromo: salesRateResult.SalesRateBeforePromo,
+			BaseRate:             round2(tax.BaseRate),
+			BillAmount:           billAmount,
+			TotalAmount:          totalLineAmount,
+			DiscountType:         salesRateResult.DiscountType,
+			DiscountAmt:          discountAmt,
+			DiscountPct:          discountPct,
+			GSTPct:               tax.GSTPct,
+			GSTAmount:            round2(tax.TotalGST),
+			CGST:                 round2(tax.CGST),
+			SGST:                 round2(tax.SGST),
+			IGST:                 round2(tax.IGST),
+			HSNCode:              productCache.HsnCode,
 		})
 	}
 
@@ -657,7 +685,9 @@ func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, repo *rep
 
 func (s *SalesInvoiceService) finalizeInvoice(
 	ctx context.Context,
-	repo *repository.SalesInvoiceRepository,
+	invoiceRepo *repository.SalesInvoiceRepository,
+	inventoryRepo *repository.StoreInventoryRepository,
+	draftRepo *repository.SalesInvoiceDraftRepository,
 	input CreateOrUpdateSalesInvoiceInput,
 	draft *model.SalesInvoiceDraftJSON,
 	lines []draftComputedLine,
@@ -690,7 +720,7 @@ func (s *SalesInvoiceService) finalizeInvoice(
 		PaymentStatus:               &draft.PaymentStatus,
 		TotalBillAmount:             draftPayload.TotalBillAmount,
 		TaxableAmount:               draftPayload.TaxableAmount,
-		TotalAmountBeforeDisc:       draftPayload.TotalAmount,
+		TotalAmountBeforeDisc:       draftPayload.TotalBillAmount,
 		DiscountType:                "INR",
 		DiscountPercentage:          0,
 		DiscountAmount:              draftPayload.TotalAmount - draftPayload.TotalBillAmount,
@@ -700,7 +730,7 @@ func (s *SalesInvoiceService) finalizeInvoice(
 		PrepaidAmount:               draft.PrepaidAmount,
 		TotalGST:                    draftPayload.TotalGST,
 		RoundOff:                    draftPayload.RoundOff,
-		TotalInvoiceAmount:          draft.TotalInvoiceAmount,
+		TotalInvoiceAmount:          draftPayload.TotalInvoiceAmount,
 		TotalProducts:               draftPayload.TotalProducts,
 		TotalItems:                  draftPayload.TotalItems,
 		TotalQuantity:               draftPayload.TotalQuantity,
@@ -732,12 +762,12 @@ func (s *SalesInvoiceService) finalizeInvoice(
 		CreatedBy:                   input.UserID,
 		DeviceMasterID:              draftPayload.DeviceMasterID,
 	}
-	if err := repo.CreateInvoice(ctx, &invoice); err != nil {
+	if err := invoiceRepo.CreateInvoice(ctx, &invoice); err != nil {
 		return 0, err
 	}
 
 	productIDs, batchCodes := extractProductIDsAndBatchCodes(lines)
-	batchStocks, err := repo.FetchBatchStocks(ctx, input.StoreID, productIDs, batchCodes, false, s.batchExpiryCutoff())
+	batchStocks, err := inventoryRepo.FetchBatchStocks(ctx, input.StoreID, productIDs, batchCodes, false, s.batchExpiryCutoff())
 	if err != nil {
 		return 0, err
 	}
@@ -770,8 +800,10 @@ func (s *SalesInvoiceService) finalizeInvoice(
 				DiscountAmount:     line.DiscountAmt,
 				GSTPercentage:      line.GSTPct,
 				GSTAmount:          round2(float64(alloc.QuantityTaken) / float64(line.Item.Quantity) * line.GSTAmount),
-				TotalAmount:        round2(float64(alloc.QuantityTaken) * line.Batch.MRP),
-				CreatedBy:          input.UserID,
+				TotalAmount:          round2(float64(alloc.QuantityTaken) * line.Batch.MRP),
+				AmountBeforeDiscount: line.SalesRate,
+				SalesRateBeforePromo: &line.SalesRateBeforePromo,
+				CreatedBy:            input.UserID,
 				DeviceMasterID:     input.DeviceMasterID,
 				HSNCode:            &line.HSNCode,
 				IsFreeProduct:      &line.Item.IsFreeProduct,
@@ -796,15 +828,15 @@ func (s *SalesInvoiceService) finalizeInvoice(
 		}
 	}
 
-	if err := repo.CreateInvoiceDetails(ctx, details); err != nil {
+	if err := invoiceRepo.CreateInvoiceDetails(ctx, details); err != nil {
 		return 0, err
 	}
 
-	if err := repo.InsertInventoryTransactions(ctx, txns); err != nil {
+	if err := inventoryRepo.InsertInventoryTransactions(ctx, txns); err != nil {
 		return 0, err
 	}
 
-	draftPayments, err := repo.GetDraftPayments(ctx, draft.ID)
+	draftPayments, err := draftRepo.GetDraftPayments(ctx, draft.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -825,11 +857,11 @@ func (s *SalesInvoiceService) finalizeInvoice(
 			TillTransactionID:    input.TillTransactionID,
 		})
 	}
-	if err := repo.CreateInvoicePayments(ctx, invoicePayments); err != nil {
+	if err := invoiceRepo.CreateInvoicePayments(ctx, invoicePayments); err != nil {
 		return 0, err
 	}
 
-	if err := repo.MarkDraftInvoiced(ctx, draft.ID, input.UserID); err != nil {
+	if err := draftRepo.MarkDraftInvoiced(ctx, draft.ID, input.UserID); err != nil {
 		return 0, err
 	}
 
