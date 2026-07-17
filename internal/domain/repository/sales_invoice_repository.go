@@ -10,40 +10,47 @@ import (
 
 
 
-type SalesInvoiceRepository struct {
+type SalesInvoiceRepository interface {
+	Tx(tx Transaction) SalesInvoiceRepository
+	CreateInvoice(ctx context.Context, invoice *model.SalesInvoice) error
+	CreateInvoiceDetails(ctx context.Context, details []model.SalesInvoiceDetail) error
+	CreateInvoicePayments(ctx context.Context, payments []model.SalesInvoicePayment) error
+}
+
+type salesInvoiceRepository struct {
 	db *gorm.DB
 }
 
-func NewSalesInvoiceRepository(db *database.DB) *SalesInvoiceRepository {
-	return &SalesInvoiceRepository{db: db.DB}
+func NewSalesInvoiceRepository(db *database.DB) SalesInvoiceRepository {
+	return &salesInvoiceRepository{db: db.DB}
 }
 
-func (r *SalesInvoiceRepository) Tx(tx Transaction) *SalesInvoiceRepository {
+func (r *salesInvoiceRepository) Tx(tx Transaction) SalesInvoiceRepository {
 	if tx == nil {
 		return r
 	}
 	if gTx, ok := tx.(*gormTransaction); ok {
-		return &SalesInvoiceRepository{db: gTx.db}
+		return &salesInvoiceRepository{db: gTx.db}
 	}
 	return r
 }
 
-func (r *SalesInvoiceRepository) WithContext(ctx context.Context) *gorm.DB {
+func (r *salesInvoiceRepository) WithContext(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx)
 }
 
-func (r *SalesInvoiceRepository) CreateInvoice(ctx context.Context, invoice *model.SalesInvoice) error {
+func (r *salesInvoiceRepository) CreateInvoice(ctx context.Context, invoice *model.SalesInvoice) error {
 	return r.WithContext(ctx).Create(invoice).Error
 }
 
-func (r *SalesInvoiceRepository) CreateInvoiceDetails(ctx context.Context, details []model.SalesInvoiceDetail) error {
+func (r *salesInvoiceRepository) CreateInvoiceDetails(ctx context.Context, details []model.SalesInvoiceDetail) error {
 	if len(details) == 0 {
 		return nil
 	}
 	return r.WithContext(ctx).Create(&details).Error
 }
 
-func (r *SalesInvoiceRepository) CreateInvoicePayments(ctx context.Context, payments []model.SalesInvoicePayment) error {
+func (r *salesInvoiceRepository) CreateInvoicePayments(ctx context.Context, payments []model.SalesInvoicePayment) error {
 	if len(payments) == 0 {
 		return nil
 	}

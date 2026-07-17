@@ -31,11 +31,20 @@ body:json {
       "doctor_id": 150,
       "items": [
           {
-              "product_id": 11384,
-              "batch_code": "WEIY89",
-              "quantity": 1
+              "product_id": 21525,
+              "batch_code": "23440101",
+              "quantity": 2
           }
       ]
+  }
+}
+
+script:post-response {
+  const data = res.getBody();
+  if (data && data.data) {
+    if (data.data.id) {
+      bru.setVar("draft_id", data.data.id);
+    }
   }
 }
 

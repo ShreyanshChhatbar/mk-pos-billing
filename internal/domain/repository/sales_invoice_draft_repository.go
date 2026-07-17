@@ -10,29 +10,40 @@ import (
 	"gorm.io/gorm"
 )
 
-type SalesInvoiceDraftRepository struct {
+type SalesInvoiceDraftRepository interface {
+	Tx(tx Transaction) SalesInvoiceDraftRepository
+	GetDraftByID(ctx context.Context, id, storeID, organizationID uint64) (*model.SalesInvoiceDraftJSON, error)
+	SaveDraft(ctx context.Context, draft *model.SalesInvoiceDraftJSON) error
+	CreateDraft(ctx context.Context, draft *model.SalesInvoiceDraftJSON) error
+	ReplaceDraftPayments(ctx context.Context, draftID uint64, payments []model.SalesInvoiceDraftPayment, deletedBy uint64) error
+	AppendDraftPayments(ctx context.Context, payments []model.SalesInvoiceDraftPayment) error
+	GetDraftPayments(ctx context.Context, draftID uint64) ([]model.SalesInvoiceDraftPayment, error)
+	MarkDraftInvoiced(ctx context.Context, draftID uint64, updatedBy uint64) error
+}
+
+type salesInvoiceDraftRepository struct {
 	db *gorm.DB
 }
 
-func NewSalesInvoiceDraftRepository(db *database.DB) *SalesInvoiceDraftRepository {
-	return &SalesInvoiceDraftRepository{db: db.DB}
+func NewSalesInvoiceDraftRepository(db *database.DB) SalesInvoiceDraftRepository {
+	return &salesInvoiceDraftRepository{db: db.DB}
 }
 
-func (r *SalesInvoiceDraftRepository) Tx(tx Transaction) *SalesInvoiceDraftRepository {
+func (r *salesInvoiceDraftRepository) Tx(tx Transaction) SalesInvoiceDraftRepository {
 	if tx == nil {
 		return r
 	}
 	if gTx, ok := tx.(*gormTransaction); ok {
-		return &SalesInvoiceDraftRepository{db: gTx.db}
+		return &salesInvoiceDraftRepository{db: gTx.db}
 	}
 	return r
 }
 
-func (r *SalesInvoiceDraftRepository) WithContext(ctx context.Context) *gorm.DB {
+func (r *salesInvoiceDraftRepository) WithContext(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx)
 }
 
-func (r *SalesInvoiceDraftRepository) GetDraftByID(ctx context.Context, id, storeID, organizationID uint64) (*model.SalesInvoiceDraftJSON, error) {
+func (r *salesInvoiceDraftRepository) GetDraftByID(ctx context.Context, id, storeID, organizationID uint64) (*model.SalesInvoiceDraftJSON, error) {
 	var draft model.SalesInvoiceDraftJSON
 	err := r.WithContext(ctx).
 		Where("id = ? AND store_id = ? AND organization_id = ?", id, storeID, organizationID).
@@ -44,15 +55,15 @@ func (r *SalesInvoiceDraftRepository) GetDraftByID(ctx context.Context, id, stor
 	return &draft, nil
 }
 
-func (r *SalesInvoiceDraftRepository) SaveDraft(ctx context.Context, draft *model.SalesInvoiceDraftJSON) error {
+func (r *salesInvoiceDraftRepository) SaveDraft(ctx context.Context, draft *model.SalesInvoiceDraftJSON) error {
 	return r.WithContext(ctx).Omit("InvoiceNumber").Updates(draft).Error
 }
 
-func (r *SalesInvoiceDraftRepository) CreateDraft(ctx context.Context, draft *model.SalesInvoiceDraftJSON) error {
+func (r *salesInvoiceDraftRepository) CreateDraft(ctx context.Context, draft *model.SalesInvoiceDraftJSON) error {
 	return r.WithContext(ctx).Omit("InvoiceNumber").Create(draft).Error
 }
 
-func (r *SalesInvoiceDraftRepository) ReplaceDraftPayments(ctx context.Context, draftID uint64, payments []model.SalesInvoiceDraftPayment, deletedBy uint64) error {
+func (r *salesInvoiceDraftRepository) ReplaceDraftPayments(ctx context.Context, draftID uint64, payments []model.SalesInvoiceDraftPayment, deletedBy uint64) error {
 	if err := r.WithContext(ctx).
 		Model(&model.SalesInvoiceDraftPayment{}).
 		Where("sales_invoice_draft_id = ? AND deleted_at IS NULL", draftID).
@@ -65,14 +76,14 @@ func (r *SalesInvoiceDraftRepository) ReplaceDraftPayments(ctx context.Context, 
 	return r.WithContext(ctx).Create(&payments).Error
 }
 
-func (r *SalesInvoiceDraftRepository) AppendDraftPayments(ctx context.Context, payments []model.SalesInvoiceDraftPayment) error {
+func (r *salesInvoiceDraftRepository) AppendDraftPayments(ctx context.Context, payments []model.SalesInvoiceDraftPayment) error {
 	if len(payments) == 0 {
 		return nil
 	}
 	return r.WithContext(ctx).Create(&payments).Error
 }
 
-func (r *SalesInvoiceDraftRepository) GetDraftPayments(ctx context.Context, draftID uint64) ([]model.SalesInvoiceDraftPayment, error) {
+func (r *salesInvoiceDraftRepository) GetDraftPayments(ctx context.Context, draftID uint64) ([]model.SalesInvoiceDraftPayment, error) {
 	var payments []model.SalesInvoiceDraftPayment
 	err := r.WithContext(ctx).
 		Where("sales_invoice_draft_id = ? AND deleted_at IS NULL", draftID).
@@ -80,7 +91,7 @@ func (r *SalesInvoiceDraftRepository) GetDraftPayments(ctx context.Context, draf
 	return payments, err
 }
 
-func (r *SalesInvoiceDraftRepository) MarkDraftInvoiced(ctx context.Context, draftID uint64, updatedBy uint64) error {
+func (r *salesInvoiceDraftRepository) MarkDraftInvoiced(ctx context.Context, draftID uint64, updatedBy uint64) error {
 	return r.WithContext(ctx).
 		Model(&model.SalesInvoiceDraftJSON{}).
 		Where("id = ?", draftID).

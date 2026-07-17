@@ -10,7 +10,13 @@ import (
 	"gorm.io/gorm"
 )
 
-type StoreInventoryRepository struct {
+type StoreInventoryRepository interface {
+	Tx(tx Transaction) StoreInventoryRepository
+	InsertInventoryTransactions(ctx context.Context, txns []model.StoreInventoryTransaction) error
+	FetchBatchStocks(ctx context.Context, storeID uint64, productIDs []uint64, batchCodes []string, ignoreStockCheck bool, expiryCutoff time.Time) (map[string][]BatchStockRow, error)
+}
+
+type storeInventoryRepository struct {
 	db *gorm.DB
 }
 
@@ -25,32 +31,32 @@ type BatchStockRow struct {
 	Key          string    `gorm:"column:key"`
 }
 
-func NewStoreInventoryRepository(db *database.DB) *StoreInventoryRepository {
-	return &StoreInventoryRepository{db: db.DB}
+func NewStoreInventoryRepository(db *database.DB) StoreInventoryRepository {
+	return &storeInventoryRepository{db: db.DB}
 }
 
-func (r *StoreInventoryRepository) Tx(tx Transaction) *StoreInventoryRepository {
+func (r *storeInventoryRepository) Tx(tx Transaction) StoreInventoryRepository {
 	if tx == nil {
 		return r
 	}
 	if gTx, ok := tx.(*gormTransaction); ok {
-		return &StoreInventoryRepository{db: gTx.db}
+		return &storeInventoryRepository{db: gTx.db}
 	}
 	return r
 }
 
-func (r *StoreInventoryRepository) WithContext(ctx context.Context) *gorm.DB {
+func (r *storeInventoryRepository) WithContext(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx)
 }
 
-func (r *StoreInventoryRepository) InsertInventoryTransactions(ctx context.Context, txns []model.StoreInventoryTransaction) error {
+func (r *storeInventoryRepository) InsertInventoryTransactions(ctx context.Context, txns []model.StoreInventoryTransaction) error {
 	if len(txns) == 0 {
 		return nil
 	}
 	return r.WithContext(ctx).Create(&txns).Error
 }
 
-func (r *StoreInventoryRepository) FetchBatchStocks(ctx context.Context, storeID uint64, productIDs []uint64, batchCodes []string, ignoreStockCheck bool, expiryCutoff time.Time) (map[string][]BatchStockRow, error) {
+func (r *storeInventoryRepository) FetchBatchStocks(ctx context.Context, storeID uint64, productIDs []uint64, batchCodes []string, ignoreStockCheck bool, expiryCutoff time.Time) (map[string][]BatchStockRow, error) {
 	if len(productIDs) == 0 || len(batchCodes) == 0 {
 		return map[string][]BatchStockRow{}, nil
 	}

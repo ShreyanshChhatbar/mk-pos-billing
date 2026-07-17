@@ -134,22 +134,22 @@ type salesInvoiceDraftJSONPayload struct {
 }
 
 type draftComputedLine struct {
-	Item                CreateOrUpdateSalesInvoiceItem
-	Batch               model.Batch
-	SalesRate           float64
+	Item                 CreateOrUpdateSalesInvoiceItem
+	Batch                model.Batch
+	SalesRate            float64
 	SalesRateBeforePromo float64
-	BaseRate            float64
-	BillAmount          float64
-	TotalAmount         float64
-	DiscountType        string
-	DiscountAmt         float64
-	DiscountPct         float64
-	GSTPct              float64
-	GSTAmount           float64
-	CGST                float64
-	SGST                float64
-	IGST                float64
-	HSNCode             string
+	BaseRate             float64
+	BillAmount           float64
+	TotalAmount          float64
+	DiscountType         string
+	DiscountAmt          float64
+	DiscountPct          float64
+	GSTPct               float64
+	GSTAmount            float64
+	CGST                 float64
+	SGST                 float64
+	IGST                 float64
+	HSNCode              string
 }
 
 type DraftCalculationResult struct {
@@ -208,11 +208,11 @@ type draftPaymentResp struct {
 }
 
 type SalesInvoiceService struct {
-	invoiceRepo   *repository.SalesInvoiceRepository
-	draftRepo     *repository.SalesInvoiceDraftRepository
-	inventoryRepo *repository.StoreInventoryRepository
-	productRepo   *repository.ProductRepository
-	masterRepo    *repository.MasterDataRepository
+	invoiceRepo   repository.SalesInvoiceRepository
+	draftRepo     repository.SalesInvoiceDraftRepository
+	inventoryRepo repository.StoreInventoryRepository
+	productRepo   repository.ProductRepository
+	masterRepo    repository.MasterDataRepository
 	cache         *cache.Service
 	cfg           config.SalesInvoiceConfig
 	cacheMaster   CacheMasterService
@@ -220,11 +220,11 @@ type SalesInvoiceService struct {
 }
 
 func NewSalesInvoiceService(
-	invoiceRepo *repository.SalesInvoiceRepository,
-	draftRepo *repository.SalesInvoiceDraftRepository,
-	inventoryRepo *repository.StoreInventoryRepository,
-	productRepo *repository.ProductRepository,
-	masterRepo *repository.MasterDataRepository,
+	invoiceRepo repository.SalesInvoiceRepository,
+	draftRepo repository.SalesInvoiceDraftRepository,
+	inventoryRepo repository.StoreInventoryRepository,
+	productRepo repository.ProductRepository,
+	masterRepo repository.MasterDataRepository,
 	cacheService *cache.Service,
 	cfg config.SalesInvoiceConfig,
 	cacheMaster CacheMasterService,
@@ -549,7 +549,7 @@ func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrU
 
 	return nil
 }
-func (s *SalesInvoiceService) loadOrCreateDraft(ctx context.Context, draftRepo *repository.SalesInvoiceDraftRepository, input CreateOrUpdateSalesInvoiceInput, cachedData *draftCacheData) (*model.SalesInvoiceDraftJSON, error) {
+func (s *SalesInvoiceService) loadOrCreateDraft(ctx context.Context, draftRepo repository.SalesInvoiceDraftRepository, input CreateOrUpdateSalesInvoiceInput, cachedData *draftCacheData) (*model.SalesInvoiceDraftJSON, error) {
 	if cachedData != nil && cachedData.SalesInvoiceDraft.ID != 0 {
 		draft := cachedData.SalesInvoiceDraft
 		return &draft, nil
@@ -561,7 +561,7 @@ func (s *SalesInvoiceService) loadOrCreateDraft(ctx context.Context, draftRepo *
 	return &model.SalesInvoiceDraftJSON{}, nil
 }
 
-func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, inventoryRepo *repository.StoreInventoryRepository, productRepo *repository.ProductRepository, input CreateOrUpdateSalesInvoiceInput, cachedData *draftCacheData) (DraftCalculationResult, error) {
+func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, inventoryRepo repository.StoreInventoryRepository, productRepo repository.ProductRepository, input CreateOrUpdateSalesInvoiceInput, cachedData *draftCacheData) (DraftCalculationResult, error) {
 	var emptyResult DraftCalculationResult
 
 	productIDs, batchCodes := extractUniqueFromItems(input.Items)
@@ -685,9 +685,9 @@ func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, inventory
 
 func (s *SalesInvoiceService) finalizeInvoice(
 	ctx context.Context,
-	invoiceRepo *repository.SalesInvoiceRepository,
-	inventoryRepo *repository.StoreInventoryRepository,
-	draftRepo *repository.SalesInvoiceDraftRepository,
+	invoiceRepo repository.SalesInvoiceRepository,
+	inventoryRepo repository.StoreInventoryRepository,
+	draftRepo repository.SalesInvoiceDraftRepository,
 	input CreateOrUpdateSalesInvoiceInput,
 	draft *model.SalesInvoiceDraftJSON,
 	lines []draftComputedLine,
@@ -783,30 +783,30 @@ func (s *SalesInvoiceService) finalizeInvoice(
 
 		for _, alloc := range allocations {
 			detail := model.SalesInvoiceDetail{
-				SalesInvoiceID:     invoice.ID,
-				StoreID:            invoice.StoreID,
-				ProductID:          line.Item.ProductID,
-				StoreBatchID:       &alloc.StoreBatchID,
-				PurchaseRate:       alloc.PurchaseRate,
-				BatchCode:          alloc.BatchCode,
-				ExpiryDate:         alloc.ExpiryDate,
-				MRP:                line.Batch.MRP,
-				SalesRate:          line.SalesRate,
-				BaseRate:           line.BaseRate,
-				BillAmount:         round2(float64(alloc.QuantityTaken) * line.SalesRate),
-				Quantity:           alloc.QuantityTaken,
-				DiscountType:       line.DiscountType,
-				DiscountPercentage: line.DiscountPct,
-				DiscountAmount:     line.DiscountAmt,
-				GSTPercentage:      line.GSTPct,
-				GSTAmount:          round2(float64(alloc.QuantityTaken) / float64(line.Item.Quantity) * line.GSTAmount),
+				SalesInvoiceID:       invoice.ID,
+				StoreID:              invoice.StoreID,
+				ProductID:            line.Item.ProductID,
+				StoreBatchID:         &alloc.StoreBatchID,
+				PurchaseRate:         alloc.PurchaseRate,
+				BatchCode:            alloc.BatchCode,
+				ExpiryDate:           alloc.ExpiryDate,
+				MRP:                  line.Batch.MRP,
+				SalesRate:            line.SalesRate,
+				BaseRate:             line.BaseRate,
+				BillAmount:           round2(float64(alloc.QuantityTaken) * line.SalesRate),
+				Quantity:             alloc.QuantityTaken,
+				DiscountType:         line.DiscountType,
+				DiscountPercentage:   line.DiscountPct,
+				DiscountAmount:       line.DiscountAmt,
+				GSTPercentage:        line.GSTPct,
+				GSTAmount:            round2(float64(alloc.QuantityTaken) / float64(line.Item.Quantity) * line.GSTAmount),
 				TotalAmount:          round2(float64(alloc.QuantityTaken) * line.Batch.MRP),
 				AmountBeforeDiscount: line.SalesRate,
 				SalesRateBeforePromo: &line.SalesRateBeforePromo,
 				CreatedBy:            input.UserID,
-				DeviceMasterID:     input.DeviceMasterID,
-				HSNCode:            &line.HSNCode,
-				IsFreeProduct:      &line.Item.IsFreeProduct,
+				DeviceMasterID:       input.DeviceMasterID,
+				HSNCode:              &line.HSNCode,
+				IsFreeProduct:        &line.Item.IsFreeProduct,
 			}
 			details = append(details, detail)
 

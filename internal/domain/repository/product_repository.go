@@ -12,7 +12,17 @@ import (
 	"gorm.io/gorm"
 )
 
-type ProductRepository struct {
+type ProductRepository interface {
+	Tx(tx Transaction) ProductRepository
+	ExistsActiveProduct(ctx context.Context, productID uint64) bool
+	ExistsBatchCode(ctx context.Context, batchCode string) bool
+	GetProductValidationData(ctx context.Context, productID uint64) (*ProductValidationData, error)
+	HasNarcoticsProduct(ctx context.Context, productIDs []uint64, narcoticsLabel string) bool
+	FetchGenericPricings(ctx context.Context, templateIDs []uint64, productIDs []uint64) (map[string]model.B2CStoreTemplateGenericPricing, error)
+	FetchBatchMeta(ctx context.Context, productIDs []uint64, batchCodes []string) (map[string]model.Batch, error)
+}
+
+type productRepository struct {
 	db *gorm.DB
 }
 
@@ -23,33 +33,33 @@ type ProductValidationData struct {
 	ScheduledTypeCode string `gorm:"column:scheduled_type_code"`
 }
 
-func NewProductRepository(db *database.DB) *ProductRepository {
-	return &ProductRepository{db: db.DB}
+func NewProductRepository(db *database.DB) ProductRepository {
+	return &productRepository{db: db.DB}
 }
 
-func (r *ProductRepository) Tx(tx Transaction) *ProductRepository {
+func (r *productRepository) Tx(tx Transaction) ProductRepository {
 	if tx == nil {
 		return r
 	}
 	if gTx, ok := tx.(*gormTransaction); ok {
-		return &ProductRepository{db: gTx.db}
+		return &productRepository{db: gTx.db}
 	}
 	return r
 }
 
-func (r *ProductRepository) WithContext(ctx context.Context) *gorm.DB {
+func (r *productRepository) WithContext(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx)
 }
 
-func (r *ProductRepository) ExistsActiveProduct(ctx context.Context, productID uint64) bool {
+func (r *productRepository) ExistsActiveProduct(ctx context.Context, productID uint64) bool {
 	return r.exists(ctx, "products", "id = ? AND is_active = true AND deleted_at IS NULL", productID)
 }
 
-func (r *ProductRepository) ExistsBatchCode(ctx context.Context, batchCode string) bool {
+func (r *productRepository) ExistsBatchCode(ctx context.Context, batchCode string) bool {
 	return r.exists(ctx, "batches", "batch_number = ? AND deleted_at IS NULL", batchCode)
 }
 
-func (r *ProductRepository) GetProductValidationData(ctx context.Context, productID uint64) (*ProductValidationData, error) {
+func (r *productRepository) GetProductValidationData(ctx context.Context, productID uint64) (*ProductValidationData, error) {
 	var data ProductValidationData
 	err := r.WithContext(ctx).
 		Table("products").
@@ -68,7 +78,7 @@ func (r *ProductRepository) GetProductValidationData(ctx context.Context, produc
 	return &data, nil
 }
 
-func (r *ProductRepository) containsNarcotics(ctx context.Context, productIDs []uint64, narcoticsLabel string) (bool, error) {
+func (r *productRepository) containsNarcotics(ctx context.Context, productIDs []uint64, narcoticsLabel string) (bool, error) {
 	if len(productIDs) == 0 {
 		return false, nil
 	}
@@ -81,7 +91,7 @@ func (r *ProductRepository) containsNarcotics(ctx context.Context, productIDs []
 	return count > 0, err
 }
 
-func (r *ProductRepository) HasNarcoticsProduct(ctx context.Context, productIDs []uint64, narcoticsLabel string) bool {
+func (r *productRepository) HasNarcoticsProduct(ctx context.Context, productIDs []uint64, narcoticsLabel string) bool {
 	has, err := r.containsNarcotics(ctx, productIDs, narcoticsLabel)
 	if err != nil {
 		return false
@@ -89,7 +99,7 @@ func (r *ProductRepository) HasNarcoticsProduct(ctx context.Context, productIDs 
 	return has
 }
 
-func (r *ProductRepository) FetchGenericPricings(ctx context.Context, templateIDs []uint64, productIDs []uint64) (map[string]model.B2CStoreTemplateGenericPricing, error) {
+func (r *productRepository) FetchGenericPricings(ctx context.Context, templateIDs []uint64, productIDs []uint64) (map[string]model.B2CStoreTemplateGenericPricing, error) {
 	if len(templateIDs) == 0 || len(productIDs) == 0 {
 		return map[string]model.B2CStoreTemplateGenericPricing{}, nil
 	}
@@ -111,7 +121,7 @@ func (r *ProductRepository) FetchGenericPricings(ctx context.Context, templateID
 	return pricingMap, nil
 }
 
-func (r *ProductRepository) FetchBatchMeta(ctx context.Context, productIDs []uint64, batchCodes []string) (map[string]model.Batch, error) {
+func (r *productRepository) FetchBatchMeta(ctx context.Context, productIDs []uint64, batchCodes []string) (map[string]model.Batch, error) {
 	if len(productIDs) == 0 || len(batchCodes) == 0 {
 		return map[string]model.Batch{}, nil
 	}
@@ -132,7 +142,7 @@ func (r *ProductRepository) FetchBatchMeta(ctx context.Context, productIDs []uin
 	return batchMap, nil
 }
 
-func (r *ProductRepository) exists(ctx context.Context, table, query string, args ...interface{}) bool {
+func (r *productRepository) exists(ctx context.Context, table, query string, args ...interface{}) bool {
 	var count int64
 	if err := r.WithContext(ctx).Table(table).Where(query, args...).Count(&count).Error; err != nil {
 		return false
