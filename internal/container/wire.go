@@ -3,6 +3,7 @@ package container
 import (
 	"mk-pos-billing/internal/api/handlers"
 	"mk-pos-billing/internal/api/middleware"
+	domaincache "mk-pos-billing/internal/domain/cache"
 	"mk-pos-billing/internal/domain/repository"
 	"mk-pos-billing/internal/infrastructure/cache"
 	"mk-pos-billing/internal/infrastructure/config"
@@ -27,6 +28,11 @@ func InitializeServerApp() (*ServerApp, error) {
 	cacheTagsCfg := cacheCfg.Tags
 	cacheExpiryCfg := cacheCfg.Expiry
 	cacheMasterService := service.NewCacheMasterService(cacheService, cachePrefixesCfg, cacheTagsCfg, cacheExpiryCfg)
+	deviceCache := domaincache.NewDeviceCache(cacheService, cachePrefixesCfg)
+	productCache := domaincache.NewProductCache(cacheService, &cachePrefixesCfg, &cacheTagsCfg)
+	storeCache := domaincache.NewStoreCache(cacheService, &cachePrefixesCfg, &cacheTagsCfg)
+	tillCache := domaincache.NewTillCache(cacheService, &cachePrefixesCfg, &cacheTagsCfg)
+	userAuthCache := domaincache.NewUserAuthCache(cacheService, &cachePrefixesCfg)
 
 	salesInvoiceRepo := repository.NewSalesInvoiceRepository(db)
 	draftRepo := repository.NewSalesInvoiceDraftRepository(db)
@@ -42,17 +48,18 @@ func InitializeServerApp() (*ServerApp, error) {
 		masterRepo,
 		cacheService,
 		salesCfg,
-		cacheMasterService,
+		productCache,
+		storeCache,
 		txManager,
 	)
 	salesInvoiceHandler := handlers.NewSalesInvoiceHandler(salesInvoiceService, salesCfg)
 	duplicateRequestMiddleware := middleware.NewDuplicateRequestMiddleware(cacheService, salesCfg)
 
-	deviceTokenValidateMiddleware := middleware.NewDeviceTokenValidateMiddleware(cacheMasterService, cachePrefixesCfg)
-	posAuthTokenValidateMiddleware := middleware.NewPOSAuthTokenValidateMiddleware(cacheMasterService)
-	mapTillMiddleware := middleware.NewMapTillMiddleware(cacheMasterService)
-	sposCheckPermissionsMiddleware := middleware.NewSPOSCheckPermissionsMiddleware(cacheMasterService)
-	checkTillStatusMiddleware := middleware.NewCheckTillStatusMiddleware(cacheMasterService)
+	deviceTokenValidateMiddleware := middleware.NewDeviceTokenValidateMiddleware(deviceCache)
+	posAuthTokenValidateMiddleware := middleware.NewPOSAuthTokenValidateMiddleware(userAuthCache)
+	mapTillMiddleware := middleware.NewMapTillMiddleware(tillCache)
+	sposCheckPermissionsMiddleware := middleware.NewSPOSCheckPermissionsMiddleware(storeCache, userAuthCache)
+	checkTillStatusMiddleware := middleware.NewCheckTillStatusMiddleware(tillCache)
 	cacheTestHandler := handlers.NewCacheTestHandler(cacheMasterService)
 
 	return &ServerApp{

@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"mk-pos-billing/internal/service"
+	domaincache "mk-pos-billing/internal/domain/cache"
 	"mk-pos-billing/pkg/response"
 	"net/http"
 	"strconv"
@@ -11,11 +11,11 @@ import (
 )
 
 type MapTillMiddleware struct {
-	cacheMaster service.CacheMasterService
+	tillCache domaincache.TillCache
 }
 
-func NewMapTillMiddleware(cacheMaster service.CacheMasterService) *MapTillMiddleware {
-	return &MapTillMiddleware{cacheMaster: cacheMaster}
+func NewMapTillMiddleware(tillCache domaincache.TillCache) *MapTillMiddleware {
+	return &MapTillMiddleware{tillCache: tillCache}
 }
 
 func (m *MapTillMiddleware) Handle() gin.HandlerFunc {
@@ -39,7 +39,7 @@ func (m *MapTillMiddleware) Handle() gin.HandlerFunc {
 
 		print("-------------------------------------------------------------------------------------------------\n")
 
-		tillData, err := m.cacheMaster.GetTillCache(c.Request.Context(), int(storeID), true)
+		tillData, err := m.tillCache.Get(c.Request.Context(), int(storeID))
 		if err != nil || tillData == nil {
 			c.Next()
 			return

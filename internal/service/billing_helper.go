@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	domaincache "mk-pos-billing/internal/domain/cache"
 	"mk-pos-billing/internal/domain/model"
 	"mk-pos-billing/pkg/constants"
 )
@@ -23,8 +24,8 @@ type TaxCalculationResult struct {
 // It calculates the GST breakdown for a single billing line using a tax-inclusive reverse calculation.
 // salesRate is the total line amount (quantity × unit rate), already rounded.
 func CalculateSalesInvoiceItemTax(
-	store *model.StoreCache,
-	product *model.ProductCache,
+	store *domaincache.Store,
+	product *domaincache.Product,
 	salesRate float64,
 ) (TaxCalculationResult, error) {
 	var gstPct float64
@@ -81,8 +82,8 @@ type SalesRateResult struct {
 // GetSalesRate mirrors CommonHelper::getSalesRateCache.
 func GetSalesRate(
 	organizationID uint64,
-	product *model.ProductCache,
-	store *model.StoreCache,
+	product *domaincache.Product,
+	store *domaincache.Store,
 	mrp float64,
 	defaultOrgID uint64,
 	genericPricingMap map[string]model.B2CStoreTemplateGenericPricing,

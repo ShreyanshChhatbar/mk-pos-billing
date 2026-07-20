@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	domaincache "mk-pos-billing/internal/domain/cache"
 	"mk-pos-billing/internal/domain/model"
 	"mk-pos-billing/internal/domain/repository"
 	"mk-pos-billing/internal/infrastructure/cache"
@@ -215,7 +216,8 @@ type SalesInvoiceService struct {
 	masterRepo    repository.MasterDataRepository
 	cache         *cache.Service
 	cfg           config.SalesInvoiceConfig
-	cacheMaster   CacheMasterService
+	productCache  domaincache.ProductCache
+	storeCache    domaincache.StoreCache
 	txManager     repository.TransactionManager
 }
 
@@ -227,7 +229,8 @@ func NewSalesInvoiceService(
 	masterRepo repository.MasterDataRepository,
 	cacheService *cache.Service,
 	cfg config.SalesInvoiceConfig,
-	cacheMaster CacheMasterService,
+	productCache domaincache.ProductCache,
+	storeCache domaincache.StoreCache,
 	txManager repository.TransactionManager,
 ) *SalesInvoiceService {
 	return &SalesInvoiceService{
@@ -238,7 +241,8 @@ func NewSalesInvoiceService(
 		masterRepo:    masterRepo,
 		cache:         cacheService,
 		cfg:           cfg,
-		cacheMaster:   cacheMaster,
+		productCache:  productCache,
+		storeCache:    storeCache,
 		txManager:     txManager,
 	}
 }
@@ -514,7 +518,7 @@ func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrU
 		if pData == nil {
 			return errors.New("items." + strconv.Itoa(i) + ".product_id is invalid")
 		}
-		pCacheData, err := s.cacheMaster.GetProductCache(ctx, int(item.ProductID))
+		pCacheData, err := s.productCache.Get(ctx, int(item.ProductID))
 		if err != nil {
 			return err
 		}
@@ -574,7 +578,7 @@ func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, inventory
 		return emptyResult, err
 	}
 
-	storeCache, err := s.cacheMaster.GetStoreCache(ctx, int(input.StoreID), false)
+	storeCache, err := s.storeCache.Get(ctx, int(input.StoreID))
 	if err != nil {
 		return emptyResult, fmt.Errorf("store cache unavailable: %w", err)
 	}
@@ -584,7 +588,7 @@ func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, inventory
 	var genericProductIDs []uint64
 	if input.OrganizationID == s.cfg.DefaultOrganizationID {
 		for _, item := range input.Items {
-			productCache, err := s.cacheMaster.GetProductCache(ctx, int(item.ProductID))
+			productCache, err := s.productCache.Get(ctx, int(item.ProductID))
 			if err != nil {
 				continue
 			}
@@ -622,7 +626,7 @@ func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, inventory
 			return emptyResult, fmt.Errorf("requested quantity (%d) for batch (%s) is more than available quantity (%d)", item.Quantity, item.BatchCode, available)
 		}
 
-		productCache, err := s.cacheMaster.GetProductCache(ctx, int(item.ProductID))
+		productCache, err := s.productCache.Get(ctx, int(item.ProductID))
 		if err != nil {
 			return emptyResult, fmt.Errorf("product cache unavailable for product %d: %w", item.ProductID, err)
 		}

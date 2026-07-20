@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"mk-pos-billing/internal/service"
+	domaincache "mk-pos-billing/internal/domain/cache"
 	"mk-pos-billing/pkg/response"
 	"net/http"
 	"strings"
@@ -10,11 +10,11 @@ import (
 )
 
 type POSAuthTokenValidateMiddleware struct {
-	cacheMaster service.CacheMasterService
+	userAuthCache domaincache.UserAuthCache
 }
 
-func NewPOSAuthTokenValidateMiddleware(cacheMaster service.CacheMasterService) *POSAuthTokenValidateMiddleware {
-	return &POSAuthTokenValidateMiddleware{cacheMaster: cacheMaster}
+func NewPOSAuthTokenValidateMiddleware(userAuthCache domaincache.UserAuthCache) *POSAuthTokenValidateMiddleware {
+	return &POSAuthTokenValidateMiddleware{userAuthCache: userAuthCache}
 }
 
 func (m *POSAuthTokenValidateMiddleware) Handle() gin.HandlerFunc {
@@ -26,7 +26,7 @@ func (m *POSAuthTokenValidateMiddleware) Handle() gin.HandlerFunc {
 			return
 		}
 
-		userCache, err := m.cacheMaster.GetUserAuthCache(c.Request.Context(), token)
+		userCache, err := m.userAuthCache.Get(c.Request.Context(), token)
 		if err != nil {
 			response.Error(c, http.StatusInternalServerError, "Something went wrong")
 			c.Abort()

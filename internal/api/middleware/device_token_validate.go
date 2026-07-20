@@ -1,25 +1,21 @@
 package middleware
 
 import (
-	"mk-pos-billing/internal/service"
+	domaincache "mk-pos-billing/internal/domain/cache"
 	"mk-pos-billing/pkg/response"
 	"net/http"
 	"strings"
-
-	"mk-pos-billing/internal/infrastructure/config"
 
 	"github.com/gin-gonic/gin"
 )
 
 type DeviceTokenValidateMiddleware struct {
-	cacheMasterService service.CacheMasterService
-	cachePrefixesCfg   config.CachePrefixes
+	deviceCache domaincache.DeviceCache
 }
 
-func NewDeviceTokenValidateMiddleware(cacheMasterService service.CacheMasterService, cachePrefixesCfg config.CachePrefixes) *DeviceTokenValidateMiddleware {
+func NewDeviceTokenValidateMiddleware(deviceCache domaincache.DeviceCache) *DeviceTokenValidateMiddleware {
 	return &DeviceTokenValidateMiddleware{
-		cacheMasterService: cacheMasterService,
-		cachePrefixesCfg:   cachePrefixesCfg,
+		deviceCache: deviceCache,
 	}
 }
 
@@ -33,7 +29,7 @@ func (m *DeviceTokenValidateMiddleware) Handle() gin.HandlerFunc {
 			return
 		}
 
-		deviceDetails, err := m.cacheMasterService.GetDeviceCache(c, deviceToken)
+		deviceDetails, err := m.deviceCache.Get(c, deviceToken)
 
 		if err != nil || deviceDetails == nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "Device Token is Invalid", "invalid_device_token": true})

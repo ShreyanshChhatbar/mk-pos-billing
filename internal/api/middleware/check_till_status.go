@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"mk-pos-billing/internal/service"
+	domaincache "mk-pos-billing/internal/domain/cache"
 	"mk-pos-billing/pkg/response"
 	"net/http"
 	"time"
@@ -10,11 +10,11 @@ import (
 )
 
 type CheckTillStatusMiddleware struct {
-	cacheMaster service.CacheMasterService
+	tillCache domaincache.TillCache
 }
 
-func NewCheckTillStatusMiddleware(cacheMaster service.CacheMasterService) *CheckTillStatusMiddleware {
-	return &CheckTillStatusMiddleware{cacheMaster: cacheMaster}
+func NewCheckTillStatusMiddleware(tillCache domaincache.TillCache) *CheckTillStatusMiddleware {
+	return &CheckTillStatusMiddleware{tillCache: tillCache}
 }
 
 func (m *CheckTillStatusMiddleware) Handle() gin.HandlerFunc {
@@ -26,7 +26,7 @@ func (m *CheckTillStatusMiddleware) Handle() gin.HandlerFunc {
 			return
 		}
 
-		tillData, err := m.cacheMaster.GetTillCache(c.Request.Context(), int(storeID), true)
+		tillData, err := m.tillCache.Get(c.Request.Context(), int(storeID))
 		if err != nil || tillData == nil {
 			response.Error(c, http.StatusBadRequest, "Please Generate Till Number for this store till")
 			c.Abort()

@@ -2,7 +2,7 @@ package middleware
 
 import (
 	// "go/printer"
-	"mk-pos-billing/internal/service"
+	domaincache "mk-pos-billing/internal/domain/cache"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,12 +14,14 @@ import (
 )
 
 type SPOSCheckPermissionsMiddleware struct {
-	cacheMaster service.CacheMasterService
+	storeCache    domaincache.StoreCache
+	userAuthCache domaincache.UserAuthCache
 }
 
-func NewSPOSCheckPermissionsMiddleware(cacheMaster service.CacheMasterService) *SPOSCheckPermissionsMiddleware {
+func NewSPOSCheckPermissionsMiddleware(storeCache domaincache.StoreCache, userAuthCache domaincache.UserAuthCache) *SPOSCheckPermissionsMiddleware {
 	return &SPOSCheckPermissionsMiddleware{
-		cacheMaster: cacheMaster,
+		storeCache:    storeCache,
+		userAuthCache: userAuthCache,
 	}
 }
 
@@ -55,7 +57,7 @@ func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 			return
 		}
 
-		storeCache, err := m.cacheMaster.GetStoreCache(c.Request.Context(), int(storeID), false)
+		storeCache, err := m.storeCache.Get(c.Request.Context(), int(storeID))
 		// print("storeCache", storeCache)
 		zap.L().Info("SPOSCheckPermissionsMiddleware: storeCache", zap.Any("storeCache", storeCache), zap.Uint64("storeID", storeID))
 		if err != nil || storeCache == nil {
@@ -74,7 +76,7 @@ func (m *SPOSCheckPermissionsMiddleware) Handle() gin.HandlerFunc {
 				c.Abort()
 				return
 			}
-			userCacheMaster, err := m.cacheMaster.GetUserAuthCache(c.Request.Context(), token)
+			userCacheMaster, err := m.userAuthCache.Get(c.Request.Context(), token)
 			if err != nil {
 				response.Error(c, http.StatusInternalServerError, "Something went wrong")
 				c.Abort()
