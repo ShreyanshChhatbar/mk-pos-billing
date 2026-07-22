@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -64,75 +63,7 @@ type CreateOrUpdateSalesInvoiceOutput struct {
 	Message string
 }
 
-type draftTaxDetailJSON struct {
-	TaxName   string  `json:"tax_name"`
-	TaxRate   float64 `json:"tax_rate"`
-	TaxType   string  `json:"tax_type"`
-	TaxAmount float64 `json:"tax_amount"`
-}
 
-type draftProductJSON struct {
-	ProductID                     uint64               `json:"product_id"`
-	BatchCode                     string               `json:"batch_code"`
-	ExpiryDate                    string               `json:"expiry_date"`
-	MRP                           float64              `json:"mrp"`
-	SalesRate                     float64              `json:"sales_rate"`
-	BaseRate                      float64              `json:"base_rate"`
-	Quantity                      int                  `json:"quantity"`
-	GSTPercentage                 float64              `json:"gst_percentage"`
-	GSTAmount                     float64              `json:"gst_amount"`
-	BillAmount                    float64              `json:"bill_amount"`
-	DiscountType                  string               `json:"discount_type"`
-	DiscountAmount                float64              `json:"discount_amount"`
-	DiscountPercentage            float64              `json:"discount_percentage"`
-	IsFreeProduct                 bool                 `json:"is_free_product"`
-	ComboProductID                *uint64              `json:"combo_product_id"`
-	HSNCode                       string               `json:"hsn_code"`
-	CreatedBy                     uint64               `json:"created_by"`
-	TaxDetails                    []draftTaxDetailJSON `json:"tax_details"`
-	TotalAmount                   float64              `json:"total_amount"`
-	BatchQuantity                 int                  `json:"batch_quantity"`
-	DeviceMasterID                *uint64              `json:"device_master_id"`
-	IsAdvanceOrder                bool                 `json:"is_advance_order"`
-	IsComboProduct                bool                 `json:"is_combo_product"`
-	OrderedQuantity               *int                 `json:"ordered_quantity"`
-	ProductLocation               string               `json:"product_location"`
-	AvailableQuantity             int                  `json:"available_quantity"`
-	SalesRateBeforePromo          float64              `json:"sales_rate_before_promo"`
-	IsPrescriptionRequired        bool                 `json:"is_prescription_required"`
-	DiscountAmountBeforePromo     float64              `json:"discount_amount_before_promo"`
-	DiscountPercentageBeforePromo float64              `json:"discount_percentage_before_promo"`
-	IsEditable                    bool                 `json:"is_editable"`
-}
-
-type salesInvoiceDraftJSONPayload struct {
-	IsHomeDelivery             bool               `json:"is_home_delivery"`
-	IsActive                   bool               `json:"is_active"`
-	PaymentStatus              string             `json:"payment_status"`
-	DeviceMasterID             *uint64            `json:"device_master_id"`
-	PromoCode                  *string            `json:"promo_code"`
-	Notes                      *string            `json:"notes"`
-	TotalProducts              int                `json:"total_products"`
-	TotalItems                 int                `json:"total_items"`
-	TotalQuantity              int                `json:"total_quantity"`
-	TotalGST                   float64            `json:"total_gst"`
-	SGST                       float64            `json:"sgst"`
-	CGST                       float64            `json:"cgst"`
-	IGST                       float64            `json:"igst"`
-	DeliveryCharges            float64            `json:"delivery_charges"`
-	TaxableAmount              float64            `json:"taxable_amount"`
-	RoundOff                   float64            `json:"round_off"`
-	CINNumber                  *string            `json:"cin_number"`
-	GSTNumber                  *string            `json:"gst_number"`
-	GSTTreatment               string             `json:"gst_treatment"`
-	TotalAmount                float64            `json:"total_amount"`
-	TotalBillAmount            float64            `json:"total_bill_amount"`
-	TotalInvoiceAmount         float64            `json:"total_invoice_amount"`
-	TotalBillAmountBeforePromo float64            `json:"total_bill_amount_before_promo"`
-	PlaceOfSupplyCode          string             `json:"place_of_supply_code"`
-	IsPrescriptionRequired     bool               `json:"is_prescription_required"`
-	Products                   []draftProductJSON `json:"products"`
-}
 
 type draftComputedLine struct {
 	Item                 CreateOrUpdateSalesInvoiceItem
@@ -168,12 +99,12 @@ type DraftCalculationResult struct {
 }
 
 type draftCacheData struct {
-	SalesInvoiceDraft     model.SalesInvoiceDraftJSON     `json:"salesInvoiceDraft"`
-	CalculatedProductData draftCalculatedProductContainer `json:"calculatedProductData"`
+	SalesInvoiceDraft     model.SalesInvoiceDraftJSON     `json:"salesInvoiceDraft"     php:"salesInvoiceDraft"`
+	CalculatedProductData draftCalculatedProductContainer `json:"calculatedProductData" php:"calculatedProductData"`
 }
 
 type draftCalculatedProductContainer struct {
-	Products map[string]draftProductJSON `json:"products"`
+	Products map[string]model.DraftProductJSON `json:"products" php:"products"`
 }
 
 type draftResponse struct {
@@ -196,7 +127,7 @@ type draftResponse struct {
 	RoundOff             float64            `json:"round_off"`
 	TotalBillBeforePromo float64            `json:"total_bill_amount_before_promo"`
 	PromoCode            *string            `json:"promo_code"`
-	Items                []draftProductJSON `json:"items"`
+	Items                []model.DraftProductJSON `json:"items"`
 	Payments             []draftPaymentResp `json:"payments"`
 }
 
@@ -284,24 +215,17 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 					return err
 				}
 			}
-			var draftPayload salesInvoiceDraftJSONPayload
-			if len(draft.DraftJSON) > 0 {
-				_ = json.Unmarshal(draft.DraftJSON, &draftPayload)
-			}
-			draftPayload.Products = []draftProductJSON{}
-			draftPayload.TotalProducts = 0
-			draftPayload.TotalItems = 0
-			draftPayload.TotalQuantity = 0
-			draftPayload.TotalGST = 0
-			draftPayload.SGST = 0
-			draftPayload.CGST = 0
-			draftPayload.IGST = 0
-			draftPayload.DeliveryCharges = 0
-			draftPayload.TaxableAmount = 0
-			draftPayload.RoundOff = 0
-
-			raw, _ := json.Marshal(draftPayload)
-			draft.DraftJSON = raw
+			draft.DraftJSON.Products = []model.DraftProductJSON{}
+			draft.DraftJSON.TotalProducts = 0
+			draft.DraftJSON.TotalItems = 0
+			draft.DraftJSON.TotalQuantity = 0
+			draft.DraftJSON.TotalGST = 0
+			draft.DraftJSON.SGST = 0
+			draft.DraftJSON.CGST = 0
+			draft.DraftJSON.IGST = 0
+			draft.DraftJSON.DeliveryCharges = 0
+			draft.DraftJSON.TaxableAmount = 0
+			draft.DraftJSON.RoundOff = 0
 			draft.TotalAmount = 0
 			draft.TotalBillAmount = 0
 			draft.TotalInvoiceAmount = 0
@@ -315,8 +239,8 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 				return err
 			}
 
-			cacheData := draftCacheData{SalesInvoiceDraft: *draft, CalculatedProductData: draftCalculatedProductContainer{Products: map[string]draftProductJSON{}}}
-			_ = s.cache.SetJSON(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
+			cacheData := draftCacheData{SalesInvoiceDraft: *draft, CalculatedProductData: draftCalculatedProductContainer{Products: map[string]model.DraftProductJSON{}}}
+			_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
 
 			out = &CreateOrUpdateSalesInvoiceOutput{Data: s.buildDraftResponse(*draft, nil, existingPayments), Message: "Sales Invoice (Draft) Updated Successfully"}
 			return nil
@@ -350,7 +274,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			return err
 		}
 
-		draftPayload := salesInvoiceDraftJSONPayload{
+		draft.DraftJSON = model.DraftJSONPayload{
 			IsHomeDelivery:             isHomeDelivery,
 			IsActive:                   true,
 			PaymentStatus:              paymentStatus,
@@ -377,10 +301,6 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			TotalBillAmountBeforePromo: calcResult.TotalBill,
 			Products:                   mapLinesToDraftProducts(calcResult.Lines),
 		}
-		rawDraftJSON, err := json.Marshal(draftPayload)
-		if err != nil {
-			return err
-		}
 
 		now := time.Now()
 		draft.StoreID = input.StoreID
@@ -399,7 +319,6 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		draft.TotalAmount = calcResult.TotalAmount
 		draft.TotalDiscount = totalDiscount
 		draft.TotalAmountReceived = totalReceived
-		draft.DraftJSON = rawDraftJSON
 		draft.TillID = input.TillID
 		draft.TillTransactionID = input.TillTransactionID
 		draft.UpdatedBy = &input.UserID
@@ -432,7 +351,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			SalesInvoiceDraft:     *draft,
 			CalculatedProductData: draftCalculatedProductContainer{Products: s.linesToProductsMap(calcResult.Lines)},
 		}
-		_ = s.cache.SetJSON(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
+		_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
 
 		msg := "Sales Invoice (Draft) Created Successfully"
 		if input.ID != nil && *input.ID > 0 {
@@ -456,7 +375,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		// cache final state as draft slot with updated status
 		draft.Status = constants.SalesInvoiceStatusInvoiced
 		cacheData.SalesInvoiceDraft = *draft
-		_ = s.cache.SetJSON(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
+		_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
 
 		out = &CreateOrUpdateSalesInvoiceOutput{Data: invoiceID, Message: "Sales Invoice Created Successfully"}
 		return nil
@@ -705,10 +624,7 @@ func (s *SalesInvoiceService) finalizeInvoice(
 	draft *model.SalesInvoiceDraftJSON,
 	lines []draftComputedLine,
 ) (uint64, error) {
-	var draftPayload salesInvoiceDraftJSONPayload
-	if len(draft.DraftJSON) > 0 {
-		_ = json.Unmarshal(draft.DraftJSON, &draftPayload)
-	}
+	draftPayload := draft.DraftJSON
 
 	var gstTreatment *string
 	if draftPayload.GSTTreatment != "" {
@@ -984,19 +900,19 @@ func (s *SalesInvoiceService) batchExpiryCutoff() time.Time {
 
 func (s *SalesInvoiceService) getDraftCache(ctx context.Context, combinedKey string) (*draftCacheData, error) {
 	var data draftCacheData
-	err := s.cache.GetJSON(ctx, combinedKey, &data)
+	err := s.cache.GetPHPSerialized(ctx, combinedKey, &data)
 	if err != nil {
 		return nil, err
 	}
 	if data.CalculatedProductData.Products == nil {
-		data.CalculatedProductData.Products = map[string]draftProductJSON{}
+		data.CalculatedProductData.Products = map[string]model.DraftProductJSON{}
 	}
 	return &data, nil
 }
 
-func (s *SalesInvoiceService) linesToProductsMap(lines []draftComputedLine) map[string]draftProductJSON {
+func (s *SalesInvoiceService) linesToProductsMap(lines []draftComputedLine) map[string]model.DraftProductJSON {
 	products := mapLinesToDraftProducts(lines)
-	result := make(map[string]draftProductJSON, len(products))
+	result := make(map[string]model.DraftProductJSON, len(products))
 	for _, p := range products {
 		k := fmt.Sprintf("%d_%s", p.ProductID, p.BatchCode)
 		result[k] = p
@@ -1004,11 +920,8 @@ func (s *SalesInvoiceService) linesToProductsMap(lines []draftComputedLine) map[
 	return result
 }
 
-func (s *SalesInvoiceService) buildDraftResponse(draft model.SalesInvoiceDraftJSON, items []draftProductJSON, payments []model.SalesInvoiceDraftPayment) draftResponse {
-	var payload salesInvoiceDraftJSONPayload
-	if len(draft.DraftJSON) > 0 {
-		_ = json.Unmarshal(draft.DraftJSON, &payload)
-	}
+func (s *SalesInvoiceService) buildDraftResponse(draft model.SalesInvoiceDraftJSON, items []model.DraftProductJSON, payments []model.SalesInvoiceDraftPayment) draftResponse {
+	payload := draft.DraftJSON
 	if items == nil {
 		items = payload.Products
 	}
@@ -1042,25 +955,25 @@ func (s *SalesInvoiceService) buildDraftResponse(draft model.SalesInvoiceDraftJS
 	}
 }
 
-func mapLinesToDraftProducts(lines []draftComputedLine) []draftProductJSON {
-	products := make([]draftProductJSON, 0, len(lines))
+func mapLinesToDraftProducts(lines []draftComputedLine) []model.DraftProductJSON {
+	products := make([]model.DraftProductJSON, 0, len(lines))
 	for _, l := range lines {
-		var taxDetails []draftTaxDetailJSON
+		var taxDetails []model.DraftTaxDetailJSON
 		if l.IGST > 0 {
-			taxDetails = append(taxDetails, draftTaxDetailJSON{
+			taxDetails = append(taxDetails, model.DraftTaxDetailJSON{
 				TaxName:   constants.TaxNameIGST,
 				TaxType:   constants.TaxTypeAmount,
 				TaxRate:   l.GSTPct,
 				TaxAmount: l.IGST,
 			})
 		} else if l.CGST > 0 || l.SGST > 0 {
-			taxDetails = append(taxDetails, draftTaxDetailJSON{
+			taxDetails = append(taxDetails, model.DraftTaxDetailJSON{
 				TaxName:   constants.TaxNameSGST,
 				TaxType:   constants.TaxTypeAmount,
 				TaxRate:   l.GSTPct / 2,
 				TaxAmount: l.SGST,
 			})
-			taxDetails = append(taxDetails, draftTaxDetailJSON{
+			taxDetails = append(taxDetails, model.DraftTaxDetailJSON{
 				TaxName:   constants.TaxNameCGST,
 				TaxType:   constants.TaxTypeAmount,
 				TaxRate:   l.GSTPct / 2,
@@ -1068,7 +981,7 @@ func mapLinesToDraftProducts(lines []draftComputedLine) []draftProductJSON {
 			})
 		}
 
-		products = append(products, draftProductJSON{
+		products = append(products, model.DraftProductJSON{
 			ProductID:                     l.Item.ProductID,
 			BatchCode:                     l.Item.BatchCode,
 			ExpiryDate:                    l.Batch.ExpiryDate.Format(time.DateOnly),
