@@ -13,7 +13,8 @@ import (
 type SalesInvoiceRepository interface {
 	Tx(tx Transaction) SalesInvoiceRepository
 	CreateInvoice(ctx context.Context, invoice *model.SalesInvoice) error
-	CreateInvoiceDetails(ctx context.Context, details []model.SalesInvoiceDetail) error
+	CreateInvoiceDetails(ctx context.Context, details *[]model.SalesInvoiceDetail) error
+	CreateInvoiceTaxDetails(ctx context.Context, taxDetails *[]model.SalesInvoiceTaxDetail) error
 	CreateInvoicePayments(ctx context.Context, payments []model.SalesInvoicePayment) error
 }
 
@@ -43,11 +44,18 @@ func (r *salesInvoiceRepository) CreateInvoice(ctx context.Context, invoice *mod
 	return r.WithContext(ctx).Create(invoice).Error
 }
 
-func (r *salesInvoiceRepository) CreateInvoiceDetails(ctx context.Context, details []model.SalesInvoiceDetail) error {
-	if len(details) == 0 {
+func (r *salesInvoiceRepository) CreateInvoiceDetails(ctx context.Context, details *[]model.SalesInvoiceDetail) error {
+	if details == nil || len(*details) == 0 {
 		return nil
 	}
-	return r.WithContext(ctx).Create(&details).Error
+	return r.WithContext(ctx).Create(details).Error
+}
+
+func (r *salesInvoiceRepository) CreateInvoiceTaxDetails(ctx context.Context, taxDetails *[]model.SalesInvoiceTaxDetail) error {
+	if taxDetails == nil || len(*taxDetails) == 0 {
+		return nil
+	}
+	return r.WithContext(ctx).Create(taxDetails).Error
 }
 
 func (r *salesInvoiceRepository) CreateInvoicePayments(ctx context.Context, payments []model.SalesInvoicePayment) error {

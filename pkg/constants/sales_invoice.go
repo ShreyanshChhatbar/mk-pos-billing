@@ -17,4 +17,11 @@ const (
 	GstTreatmentRegular      = "Regular"
 	GstTreatmentUnregistered = "Unregistered"
 	GstTreatmentComposition  = "Composition"
+
+	TaxNameIGST = "igst"
+	TaxNameCGST = "cgst"
+	TaxNameSGST = "sgst"
+
+	TaxTypeAmount     = "AMT"
+	TaxTypePercentage = "PCT"
 )

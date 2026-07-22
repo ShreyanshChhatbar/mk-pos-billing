@@ -345,6 +345,11 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			isHomeDelivery = *input.IsHomeDelivery
 		}
 
+		storeInfo, err := s.storeCache.Get(ctx, int(input.StoreID))
+		if err != nil {
+			return err
+		}
+
 		draftPayload := salesInvoiceDraftJSONPayload{
 			IsHomeDelivery:             isHomeDelivery,
 			IsActive:                   true,
@@ -362,6 +367,10 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			DeliveryCharges:            0,
 			TaxableAmount:              calcResult.TaxableAmount,
 			RoundOff:                   roundOff,
+			CINNumber:                  storeInfo.CinNumber,
+			GSTNumber:                  &storeInfo.GstNumber,
+			GSTTreatment:               storeInfo.GstTreatment,
+			PlaceOfSupplyCode:          storeInfo.PlaceOfSupplyCode,
 			TotalAmount:                calcResult.TotalAmount,
 			TotalBillAmount:            calcResult.TotalBill,
 			TotalInvoiceAmount:         totalInvoice,
@@ -803,7 +812,7 @@ func (s *SalesInvoiceService) finalizeInvoice(
 				DiscountPercentage:   line.DiscountPct,
 				DiscountAmount:       line.DiscountAmt,
 				GSTPercentage:        line.GSTPct,
-				GSTAmount:            round2(float64(alloc.QuantityTaken) / float64(line.Item.Quantity) * line.GSTAmount),
+				GSTAmount:            line.GSTAmount,
 				TotalAmount:          round2(float64(alloc.QuantityTaken) * line.Batch.MRP),
 				AmountBeforeDiscount: line.SalesRate,
 				SalesRateBeforePromo: &line.SalesRateBeforePromo,
@@ -813,6 +822,23 @@ func (s *SalesInvoiceService) finalizeInvoice(
 				IsFreeProduct:        &line.Item.IsFreeProduct,
 			}
 			details = append(details, detail)
+			/*
+				^
+				Note on DiscountAmount and GSTAmount:
+				We deliberately do NOT prorate these amounts across split batch allocations.
+				Normally, you would calculate these as:
+				round2(float64(alloc.QuantityTaken) / float64(line.Item.Quantity) * line.GSTAmount)
+
+				However, in the Laravel backend's invoiceDetail API, the SQL query uses a
+				GROUP BY clause that groups on 'discount_amount' and 'gst_amount' instead of summing them:
+				->groupBy('product_id', 'batch_code', ..., 'discount_amount', 'gst_amount')
+
+				If we prorated these values here, split rows would have different discount/GST amounts.
+				The GROUP BY clause would then fail to match them, causing the frontend to
+				render two separate line items instead of collapsing them. By writing the total
+				un-prorated amount into every split row, we perfectly mimic Laravel's behavior
+				so the GROUP BY query successfully collapses the rows.
+			*/
 
 			txn := model.StoreInventoryTransaction{
 				StoreID:         input.StoreID,
@@ -832,8 +858,78 @@ func (s *SalesInvoiceService) finalizeInvoice(
 		}
 	}
 
-	if err := invoiceRepo.CreateInvoiceDetails(ctx, details); err != nil {
+	if err := invoiceRepo.CreateInvoiceDetails(ctx, &details); err != nil {
 		return 0, err
+	}
+
+	// build a map for fast lookup of computed lines
+	lineMap := make(map[string]*draftComputedLine, len(lines))
+	for i := range lines {
+		l := &lines[i]
+		k := fmt.Sprintf("%d_%s", l.Item.ProductID, l.Item.BatchCode)
+		lineMap[k] = l
+	}
+
+	var allTaxDetails []model.SalesInvoiceTaxDetail
+	for _, detail := range details {
+		k := fmt.Sprintf("%d_%s", detail.ProductID, detail.BatchCode)
+		if matchedLine, ok := lineMap[k]; ok {
+			var taxDetails []model.SalesInvoiceTaxDetail
+			now := time.Now()
+			// compute tax per detail quantity
+			if matchedLine.IGST > 0 {
+				taxAmount := round2(float64(detail.Quantity) / float64(matchedLine.Item.Quantity) * matchedLine.IGST)
+				if taxAmount > 0 {
+					taxDetails = append(taxDetails, model.SalesInvoiceTaxDetail{
+						SalesInvoiceDetailID: detail.ID,
+						StoreID:              invoice.StoreID,
+						TaxType:              constants.TaxTypeAmount,
+						TaxRate:              matchedLine.GSTPct,
+						TaxName:              constants.TaxNameIGST,
+						TaxAmount:            taxAmount,
+						IsActive:             true,
+						CreatedBy:            input.UserID,
+						CreatedAt:            now,
+					})
+				}
+			} else if matchedLine.CGST > 0 || matchedLine.SGST > 0 {
+				sgstAmount := round2(float64(detail.Quantity) / float64(matchedLine.Item.Quantity) * matchedLine.SGST)
+				if sgstAmount > 0 {
+					taxDetails = append(taxDetails, model.SalesInvoiceTaxDetail{
+						SalesInvoiceDetailID: detail.ID,
+						StoreID:              invoice.StoreID,
+						TaxType:              constants.TaxTypeAmount,
+						TaxRate:              matchedLine.GSTPct / 2,
+						TaxName:              constants.TaxNameSGST,
+						TaxAmount:            sgstAmount,
+						IsActive:             true,
+						CreatedBy:            input.UserID,
+						CreatedAt:            now,
+					})
+				}
+				cgstAmount := round2(float64(detail.Quantity) / float64(matchedLine.Item.Quantity) * matchedLine.CGST)
+				if cgstAmount > 0 {
+					taxDetails = append(taxDetails, model.SalesInvoiceTaxDetail{
+						SalesInvoiceDetailID: detail.ID,
+						StoreID:              invoice.StoreID,
+						TaxType:              constants.TaxTypeAmount,
+						TaxRate:              matchedLine.GSTPct / 2,
+						TaxName:              constants.TaxNameCGST,
+						TaxAmount:            cgstAmount,
+						IsActive:             true,
+						CreatedBy:            input.UserID,
+						CreatedAt:            now,
+					})
+				}
+			}
+			allTaxDetails = append(allTaxDetails, taxDetails...)
+		}
+	}
+
+	if len(allTaxDetails) > 0 {
+		if err := invoiceRepo.CreateInvoiceTaxDetails(ctx, &allTaxDetails); err != nil {
+			return 0, err
+		}
 	}
 
 	if err := inventoryRepo.InsertInventoryTransactions(ctx, txns); err != nil {
@@ -899,26 +995,11 @@ func (s *SalesInvoiceService) getDraftCache(ctx context.Context, combinedKey str
 }
 
 func (s *SalesInvoiceService) linesToProductsMap(lines []draftComputedLine) map[string]draftProductJSON {
-	result := make(map[string]draftProductJSON, len(lines))
-	for _, l := range lines {
-		k := fmt.Sprintf("%d_%s", l.Item.ProductID, l.Item.BatchCode)
-		result[k] = draftProductJSON{
-			ProductID:          l.Item.ProductID,
-			BatchCode:          l.Item.BatchCode,
-			ExpiryDate:         l.Batch.ExpiryDate.Format(time.DateOnly),
-			MRP:                l.Batch.MRP,
-			SalesRate:          l.SalesRate,
-			BaseRate:           l.BaseRate,
-			Quantity:           l.Item.Quantity,
-			GSTPercentage:      l.GSTPct,
-			GSTAmount:          l.GSTAmount,
-			BillAmount:         l.BillAmount,
-			DiscountType:       l.DiscountType,
-			DiscountAmount:     l.DiscountAmt,
-			DiscountPercentage: l.DiscountPct,
-			IsFreeProduct:      l.Item.IsFreeProduct,
-			ComboProductID:     l.Item.ComboProductID,
-		}
+	products := mapLinesToDraftProducts(lines)
+	result := make(map[string]draftProductJSON, len(products))
+	for _, p := range products {
+		k := fmt.Sprintf("%d_%s", p.ProductID, p.BatchCode)
+		result[k] = p
 	}
 	return result
 }
@@ -964,6 +1045,29 @@ func (s *SalesInvoiceService) buildDraftResponse(draft model.SalesInvoiceDraftJS
 func mapLinesToDraftProducts(lines []draftComputedLine) []draftProductJSON {
 	products := make([]draftProductJSON, 0, len(lines))
 	for _, l := range lines {
+		var taxDetails []draftTaxDetailJSON
+		if l.IGST > 0 {
+			taxDetails = append(taxDetails, draftTaxDetailJSON{
+				TaxName:   constants.TaxNameIGST,
+				TaxType:   constants.TaxTypeAmount,
+				TaxRate:   l.GSTPct,
+				TaxAmount: l.IGST,
+			})
+		} else if l.CGST > 0 || l.SGST > 0 {
+			taxDetails = append(taxDetails, draftTaxDetailJSON{
+				TaxName:   constants.TaxNameSGST,
+				TaxType:   constants.TaxTypeAmount,
+				TaxRate:   l.GSTPct / 2,
+				TaxAmount: l.SGST,
+			})
+			taxDetails = append(taxDetails, draftTaxDetailJSON{
+				TaxName:   constants.TaxNameCGST,
+				TaxType:   constants.TaxTypeAmount,
+				TaxRate:   l.GSTPct / 2,
+				TaxAmount: l.CGST,
+			})
+		}
+
 		products = append(products, draftProductJSON{
 			ProductID:                     l.Item.ProductID,
 			BatchCode:                     l.Item.BatchCode,
@@ -984,6 +1088,7 @@ func mapLinesToDraftProducts(lines []draftComputedLine) []draftProductJSON {
 			SalesRateBeforePromo:          l.SalesRate,
 			DiscountAmountBeforePromo:     l.DiscountAmt,
 			DiscountPercentageBeforePromo: l.DiscountPct,
+			TaxDetails:                    taxDetails,
 		})
 	}
 	return products
