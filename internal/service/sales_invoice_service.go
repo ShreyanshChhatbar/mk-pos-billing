@@ -63,8 +63,6 @@ type CreateOrUpdateSalesInvoiceOutput struct {
 	Message string
 }
 
-
-
 type draftComputedLine struct {
 	Item                 CreateOrUpdateSalesInvoiceItem
 	Batch                model.Batch
@@ -108,27 +106,27 @@ type draftCalculatedProductContainer struct {
 }
 
 type draftResponse struct {
-	ID                   uint64             `json:"id"`
-	OrganizationID       uint64             `json:"organization_id"`
-	IsHomeDelivery       bool               `json:"is_home_delivery"`
-	TotalProducts        int                `json:"total_products"`
-	TotalItems           int                `json:"total_items"`
-	TotalQuantity        int                `json:"total_quantity"`
-	PrepaidAmount        float64            `json:"prepaid_amount"`
-	TotalInvoiceAmount   float64            `json:"total_invoice_amount"`
-	TotalAmountReceived  float64            `json:"total_amount_received"`
-	AmountDue            float64            `json:"amount_due"`
-	DeliveryCharges      float64            `json:"delivery_charges"`
-	TotalMRP             float64            `json:"total_mrp"`
-	TotalSavings         float64            `json:"total_savings"`
-	TaxableAmount        float64            `json:"taxable_amount"`
-	Status               string             `json:"status"`
-	PaymentStatus        string             `json:"payment_status"`
-	RoundOff             float64            `json:"round_off"`
-	TotalBillBeforePromo float64            `json:"total_bill_amount_before_promo"`
-	PromoCode            *string            `json:"promo_code"`
+	ID                   uint64                   `json:"id"`
+	OrganizationID       uint64                   `json:"organization_id"`
+	IsHomeDelivery       bool                     `json:"is_home_delivery"`
+	TotalProducts        int                      `json:"total_products"`
+	TotalItems           int                      `json:"total_items"`
+	TotalQuantity        int                      `json:"total_quantity"`
+	PrepaidAmount        float64                  `json:"prepaid_amount"`
+	TotalInvoiceAmount   float64                  `json:"total_invoice_amount"`
+	TotalAmountReceived  float64                  `json:"total_amount_received"`
+	AmountDue            float64                  `json:"amount_due"`
+	DeliveryCharges      float64                  `json:"delivery_charges"`
+	TotalMRP             float64                  `json:"total_mrp"`
+	TotalSavings         float64                  `json:"total_savings"`
+	TaxableAmount        float64                  `json:"taxable_amount"`
+	Status               string                   `json:"status"`
+	PaymentStatus        string                   `json:"payment_status"`
+	RoundOff             float64                  `json:"round_off"`
+	TotalBillBeforePromo float64                  `json:"total_bill_amount_before_promo"`
+	PromoCode            *string                  `json:"promo_code"`
 	Items                []model.DraftProductJSON `json:"items"`
-	Payments             []draftPaymentResp `json:"payments"`
+	Payments             []draftPaymentResp       `json:"payments"`
 }
 
 type draftPaymentResp struct {
@@ -191,7 +189,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		txInvoiceRepo := s.invoiceRepo.Tx(tx)
 		txInventoryRepo := s.inventoryRepo.Tx(tx)
 		txProductRepo := s.productRepo.Tx(tx)
-		cacheKey, cacheTag, combinedCacheKey := s.buildDraftCacheKeys(input.StoreID, input.ID)
+		combinedCacheKey := s.buildDraftCacheKeys(input.StoreID, input.ID)
 
 		cachedData, _ := s.getDraftCache(ctx, combinedCacheKey)
 
@@ -201,49 +199,8 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		}
 
 		if input.ID != nil && !input.ItemsPresent {
-			existingPayments, err := txDraftRepo.GetDraftPayments(ctx, draft.ID)
-			if err != nil {
-				return err
-			}
-			_, draftPayments := buildDraftPayments(input, draft.ID)
-			if err := txDraftRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
-				return err
-			}
-			if len(draftPayments) > 0 {
-				existingPayments, err = txDraftRepo.GetDraftPayments(ctx, draft.ID)
-				if err != nil {
-					return err
-				}
-			}
-			draft.DraftJSON.Products = []model.DraftProductJSON{}
-			draft.DraftJSON.TotalProducts = 0
-			draft.DraftJSON.TotalItems = 0
-			draft.DraftJSON.TotalQuantity = 0
-			draft.DraftJSON.TotalGST = 0
-			draft.DraftJSON.SGST = 0
-			draft.DraftJSON.CGST = 0
-			draft.DraftJSON.IGST = 0
-			draft.DraftJSON.DeliveryCharges = 0
-			draft.DraftJSON.TaxableAmount = 0
-			draft.DraftJSON.RoundOff = 0
-			draft.TotalAmount = 0
-			draft.TotalBillAmount = 0
-			draft.TotalInvoiceAmount = 0
-			draft.TotalAmountReceived = totalReceivedFromDraftPayments(existingPayments)
-			draft.TotalDiscount = 0
-			draft.RoundOff = 0
-			draft.Status = resolveDraftStatus(len(existingPayments) > 0 || len(draftPayments) > 0)
-			draft.PaymentStatus = resolvePaymentStatus(draft.TotalAmountReceived, 0)
-			draft.UpdatedBy = &input.UserID
-			if err := txDraftRepo.SaveDraft(ctx, draft); err != nil {
-				return err
-			}
-
-			cacheData := draftCacheData{SalesInvoiceDraft: *draft, CalculatedProductData: draftCalculatedProductContainer{Products: map[string]model.DraftProductJSON{}}}
-			_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
-
-			out = &CreateOrUpdateSalesInvoiceOutput{Data: s.buildDraftResponse(*draft, nil, existingPayments), Message: "Sales Invoice (Draft) Updated Successfully"}
-			return nil
+			out, err = s.handlePaymentOnlyUpdate(ctx, txDraftRepo, input, draft, combinedCacheKey)
+			return err
 		}
 
 		calcResult, err := s.calculateDraftLines(ctx, txInventoryRepo, txProductRepo, input, cachedData)
@@ -264,94 +221,15 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 		paymentStatus := resolvePaymentStatus(totalReceived, totalInvoice)
 		status := resolveDraftStatus(len(existingPayments) > 0 || len(draftPayments) > 0)
 
-		isHomeDelivery := false
-		if input.IsHomeDelivery != nil {
-			isHomeDelivery = *input.IsHomeDelivery
-		}
-
-		storeInfo, err := s.storeCache.Get(ctx, int(input.StoreID))
+		draftPayload, err := s.buildDraftPayload(ctx, input, calcResult, paymentStatus, roundOff, totalInvoice)
 		if err != nil {
 			return err
 		}
 
-		draft.DraftJSON = model.DraftJSONPayload{
-			IsHomeDelivery:             isHomeDelivery,
-			IsActive:                   true,
-			PaymentStatus:              paymentStatus,
-			DeviceMasterID:             input.DeviceMasterID,
-			PromoCode:                  input.PromoCode,
-			Notes:                      input.Notes,
-			TotalProducts:              calcResult.TotalProducts,
-			TotalItems:                 calcResult.TotalItems,
-			TotalQuantity:              calcResult.TotalQty,
-			TotalGST:                   calcResult.TotalGST,
-			SGST:                       calcResult.TotalSGST,
-			CGST:                       calcResult.TotalCGST,
-			IGST:                       calcResult.TotalIGST,
-			DeliveryCharges:            0,
-			TaxableAmount:              calcResult.TaxableAmount,
-			RoundOff:                   roundOff,
-			CINNumber:                  storeInfo.CinNumber,
-			GSTNumber:                  &storeInfo.GstNumber,
-			GSTTreatment:               storeInfo.GstTreatment,
-			PlaceOfSupplyCode:          storeInfo.PlaceOfSupplyCode,
-			TotalAmount:                calcResult.TotalAmount,
-			TotalBillAmount:            calcResult.TotalBill,
-			TotalInvoiceAmount:         totalInvoice,
-			TotalBillAmountBeforePromo: calcResult.TotalBill,
-			Products:                   mapLinesToDraftProducts(calcResult.Lines),
-		}
-
-		now := time.Now()
-		draft.StoreID = input.StoreID
-		draft.OrganizationID = input.OrganizationID
-		draft.BillingUserID = input.BillingUserID
-		draft.CustomerID = input.CustomerID
-		draft.CustomerAddressID = input.CustomerAddressID
-		draft.DoctorID = input.DoctorID
-		draft.PatientID = input.PatientID
-		draft.Status = status
-		draft.PaymentStatus = paymentStatus
-		draft.TotalBillAmount = calcResult.TotalBill
-		draft.PrepaidAmount = 0
-		draft.RoundOff = roundOff
-		draft.TotalInvoiceAmount = totalInvoice
-		draft.TotalAmount = calcResult.TotalAmount
-		draft.TotalDiscount = totalDiscount
-		draft.TotalAmountReceived = totalReceived
-		draft.TillID = input.TillID
-		draft.TillTransactionID = input.TillTransactionID
-		draft.UpdatedBy = &input.UserID
-		draft.UpdatedAt = now
-
-		if draft.ID == 0 {
-			draft.CreatedBy = input.UserID
-			draft.CreatedAt = now
-			if err := txDraftRepo.CreateDraft(ctx, draft); err != nil {
-				return err
-			}
-			cacheKey, _, combinedCacheKey = s.buildDraftCacheKeys(input.StoreID, &draft.ID)
-			_ = cacheKey
-			_ = cacheTag
-		} else {
-			if err := txDraftRepo.SaveDraft(ctx, draft); err != nil {
-				return err
-			}
-		}
-
-		for i := range draftPayments {
-			draftPayments[i].SalesInvoiceDraftID = draft.ID
-		}
-		if err := txDraftRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
+		persistedPayments, err := s.persistDraft(ctx, txDraftRepo, input, draft, draftPayload, calcResult, status, totalDiscount, totalReceived, draftPayments, combinedCacheKey)
+		if err != nil {
 			return err
 		}
-
-		persistedPayments, _ := txDraftRepo.GetDraftPayments(ctx, draft.ID)
-		cacheData := draftCacheData{
-			SalesInvoiceDraft:     *draft,
-			CalculatedProductData: draftCalculatedProductContainer{Products: s.linesToProductsMap(calcResult.Lines)},
-		}
-		_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
 
 		msg := "Sales Invoice (Draft) Created Successfully"
 		if input.ID != nil && *input.ID > 0 {
@@ -363,19 +241,10 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			return nil
 		}
 
-		if !hasAdvanceRefundPayment(persistedPayments) && round2(draft.TotalAmountReceived+draft.PrepaidAmount) != round2(draft.TotalInvoiceAmount) {
-			return fmt.Errorf("entered amount is more then the bill amount, please enter proper amount")
-		}
-
-		invoiceID, err := s.finalizeInvoice(ctx, txInvoiceRepo, txInventoryRepo, txDraftRepo, input, draft, calcResult.Lines)
+		invoiceID, err := s.finalizeDraft(ctx, txInvoiceRepo, txInventoryRepo, txDraftRepo, input, draft, calcResult, persistedPayments, combinedCacheKey)
 		if err != nil {
 			return err
 		}
-
-		// cache final state as draft slot with updated status
-		draft.Status = constants.SalesInvoiceStatusInvoiced
-		cacheData.SalesInvoiceDraft = *draft
-		_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
 
 		out = &CreateOrUpdateSalesInvoiceOutput{Data: invoiceID, Message: "Sales Invoice Created Successfully"}
 		return nil
@@ -385,6 +254,204 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 	}
 
 	return out, nil
+}
+
+func (s *SalesInvoiceService) handlePaymentOnlyUpdate(
+	ctx context.Context,
+	txDraftRepo repository.SalesInvoiceDraftRepository,
+	input CreateOrUpdateSalesInvoiceInput,
+	draft *model.SalesInvoiceDraftJSON,
+	combinedCacheKey string,
+) (*CreateOrUpdateSalesInvoiceOutput, error) {
+	existingPayments, err := txDraftRepo.GetDraftPayments(ctx, draft.ID)
+	if err != nil {
+		return nil, err
+	}
+	_, draftPayments := buildDraftPayments(input, draft.ID)
+	if err := txDraftRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
+		return nil, err
+	}
+	if len(draftPayments) > 0 {
+		existingPayments, err = txDraftRepo.GetDraftPayments(ctx, draft.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	draft.DraftJSON.Products = []model.DraftProductJSON{}
+	draft.DraftJSON.TotalProducts = 0
+	draft.DraftJSON.TotalItems = 0
+	draft.DraftJSON.TotalQuantity = 0
+	draft.DraftJSON.TotalGST = 0
+	draft.DraftJSON.SGST = 0
+	draft.DraftJSON.CGST = 0
+	draft.DraftJSON.IGST = 0
+	draft.DraftJSON.DeliveryCharges = 0
+	draft.DraftJSON.TaxableAmount = 0
+	draft.DraftJSON.RoundOff = 0
+	draft.TotalAmount = 0
+	draft.TotalBillAmount = 0
+	draft.TotalInvoiceAmount = 0
+	draft.TotalAmountReceived = totalReceivedFromDraftPayments(existingPayments)
+	draft.TotalDiscount = 0
+	draft.RoundOff = 0
+	draft.Status = resolveDraftStatus(len(existingPayments) > 0 || len(draftPayments) > 0)
+	draft.PaymentStatus = resolvePaymentStatus(draft.TotalAmountReceived, 0)
+	draft.UpdatedBy = &input.UserID
+	if err := txDraftRepo.SaveDraft(ctx, draft); err != nil {
+		return nil, err
+	}
+
+	cacheData := draftCacheData{SalesInvoiceDraft: *draft, CalculatedProductData: draftCalculatedProductContainer{Products: map[string]model.DraftProductJSON{}}}
+	_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
+
+	out := &CreateOrUpdateSalesInvoiceOutput{Data: s.buildDraftResponse(*draft, nil, existingPayments), Message: "Sales Invoice (Draft) Updated Successfully"}
+	return out, nil
+}
+
+func (s *SalesInvoiceService) buildDraftPayload(
+	ctx context.Context,
+	input CreateOrUpdateSalesInvoiceInput,
+	calcResult DraftCalculationResult,
+	paymentStatus string,
+	roundOff float64,
+	totalInvoice float64,
+) (model.DraftJSONPayload, error) {
+	isHomeDelivery := false
+	if input.IsHomeDelivery != nil {
+		isHomeDelivery = *input.IsHomeDelivery
+	}
+
+	storeInfo, err := s.storeCache.Get(ctx, int(input.StoreID))
+	if err != nil {
+		return model.DraftJSONPayload{}, err
+	}
+
+	draftPayload := model.DraftJSONPayload{
+		IsHomeDelivery:             isHomeDelivery,
+		IsActive:                   true,
+		PaymentStatus:              paymentStatus,
+		DeviceMasterID:             input.DeviceMasterID,
+		PromoCode:                  input.PromoCode,
+		Notes:                      input.Notes,
+		TotalProducts:              calcResult.TotalProducts,
+		TotalItems:                 calcResult.TotalItems,
+		TotalQuantity:              calcResult.TotalQty,
+		TotalGST:                   calcResult.TotalGST,
+		SGST:                       calcResult.TotalSGST,
+		CGST:                       calcResult.TotalCGST,
+		IGST:                       calcResult.TotalIGST,
+		DeliveryCharges:            0,
+		TaxableAmount:              calcResult.TaxableAmount,
+		RoundOff:                   roundOff,
+		CINNumber:                  storeInfo.CinNumber,
+		GSTNumber:                  &storeInfo.GstNumber,
+		GSTTreatment:               storeInfo.GstTreatment,
+		PlaceOfSupplyCode:          storeInfo.PlaceOfSupplyCode,
+		TotalAmount:                calcResult.TotalAmount,
+		TotalBillAmount:            calcResult.TotalBill,
+		TotalInvoiceAmount:         totalInvoice,
+		TotalBillAmountBeforePromo: calcResult.TotalBill,
+		Products:                   mapLinesToDraftProducts(calcResult.Lines),
+	}
+	return draftPayload, nil
+}
+
+func (s *SalesInvoiceService) persistDraft(
+	ctx context.Context,
+	txDraftRepo repository.SalesInvoiceDraftRepository,
+	input CreateOrUpdateSalesInvoiceInput,
+	draft *model.SalesInvoiceDraftJSON,
+	draftPayload model.DraftJSONPayload,
+	calcResult DraftCalculationResult,
+	status string,
+	totalDiscount float64,
+	totalReceived float64,
+	draftPayments []model.SalesInvoiceDraftPayment,
+	combinedCacheKey string,
+) ([]model.SalesInvoiceDraftPayment, error) {
+	now := time.Now()
+	draft.StoreID = input.StoreID
+	draft.OrganizationID = input.OrganizationID
+	draft.BillingUserID = input.BillingUserID
+	draft.CustomerID = input.CustomerID
+	draft.CustomerAddressID = input.CustomerAddressID
+	draft.DoctorID = input.DoctorID
+	draft.PatientID = input.PatientID
+	draft.Status = status
+	draft.PaymentStatus = draftPayload.PaymentStatus
+	draft.TotalBillAmount = calcResult.TotalBill
+	draft.PrepaidAmount = 0
+	draft.RoundOff = draftPayload.RoundOff
+	draft.TotalInvoiceAmount = draftPayload.TotalInvoiceAmount
+	draft.TotalAmount = calcResult.TotalAmount
+	draft.TotalDiscount = totalDiscount
+	draft.TotalAmountReceived = totalReceived
+	draft.DraftJSON = draftPayload
+	draft.TillID = input.TillID
+	draft.TillTransactionID = input.TillTransactionID
+	draft.UpdatedBy = &input.UserID
+	draft.UpdatedAt = now
+
+	if draft.ID == 0 {
+		draft.CreatedBy = input.UserID
+		draft.CreatedAt = now
+		if err := txDraftRepo.CreateDraft(ctx, draft); err != nil {
+			return nil, err
+		}
+		combinedCacheKey = s.buildDraftCacheKeys(input.StoreID, &draft.ID)
+	} else {
+		if err := txDraftRepo.SaveDraft(ctx, draft); err != nil {
+			return nil, err
+		}
+	}
+
+	for i := range draftPayments {
+		draftPayments[i].SalesInvoiceDraftID = draft.ID
+	}
+	if err := txDraftRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
+		return nil, err
+	}
+
+	persistedPayments, _ := txDraftRepo.GetDraftPayments(ctx, draft.ID)
+	cacheData := draftCacheData{
+		SalesInvoiceDraft:     *draft,
+		CalculatedProductData: draftCalculatedProductContainer{Products: s.linesToProductsMap(calcResult.Lines)},
+	}
+	_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
+
+	return persistedPayments, nil
+}
+
+func (s *SalesInvoiceService) finalizeDraft(
+	ctx context.Context,
+	txInvoiceRepo repository.SalesInvoiceRepository,
+	txInventoryRepo repository.StoreInventoryRepository,
+	txDraftRepo repository.SalesInvoiceDraftRepository,
+	input CreateOrUpdateSalesInvoiceInput,
+	draft *model.SalesInvoiceDraftJSON,
+	calcResult DraftCalculationResult,
+	persistedPayments []model.SalesInvoiceDraftPayment,
+	combinedCacheKey string,
+) (uint64, error) {
+	if !hasAdvanceRefundPayment(persistedPayments) && round2(draft.TotalAmountReceived+draft.PrepaidAmount) != round2(draft.TotalInvoiceAmount) {
+		return 0, fmt.Errorf("entered amount is more then the bill amount, please enter proper amount")
+	}
+
+	invoiceID, err := s.finalizeInvoice(ctx, txInvoiceRepo, txInventoryRepo, txDraftRepo, input, draft, calcResult.Lines)
+	if err != nil {
+		return 0, err
+	}
+
+	// cache final state as draft slot with updated status
+	draft.Status = constants.SalesInvoiceStatusInvoiced
+	cacheData := draftCacheData{
+		SalesInvoiceDraft:     *draft,
+		CalculatedProductData: draftCalculatedProductContainer{Products: s.linesToProductsMap(calcResult.Lines)},
+	}
+	_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
+
+	return invoiceID, nil
 }
 
 func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrUpdateSalesInvoiceInput) error {
@@ -884,14 +951,14 @@ func (s *SalesInvoiceService) finalizeInvoice(
 	return invoice.ID, nil
 }
 
-func (s *SalesInvoiceService) buildDraftCacheKeys(storeID uint64, draftID *uint64) (string, string, string) {
+func (s *SalesInvoiceService) buildDraftCacheKeys(storeID uint64, draftID *uint64) string {
 	id := uint64(0)
 	if draftID != nil {
 		id = *draftID
 	}
 	key := s.cfg.PrefixDraftBillCache + strconv.FormatUint(id, 10)
 	tag := s.cfg.PrefixDraftBillCacheTags + strconv.FormatUint(storeID, 10)
-	return key, tag, tag + ":" + key
+	return tag + ":" + key
 }
 
 func (s *SalesInvoiceService) batchExpiryCutoff() time.Time {
