@@ -208,25 +208,22 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			return err
 		}
 
-		totalInvoice := math.Round(calcResult.TotalBill)
-		roundOff := totalInvoice - calcResult.TotalBill
-		totalDiscount := calcResult.TotalAmount - calcResult.TotalBill
-
 		existingPayments, err := txDraftRepo.GetDraftPayments(ctx, draft.ID)
 		if err != nil {
 			return err
 		}
 		newPaymentTotal, draftPayments := buildDraftPayments(input, draft.ID)
-		totalReceived := round2(totalReceivedFromDraftPayments(existingPayments) + newPaymentTotal)
-		paymentStatus := resolvePaymentStatus(totalReceived, totalInvoice)
-		status := resolveDraftStatus(len(existingPayments) > 0 || len(draftPayments) > 0)
 
-		draftPayload, err := s.buildDraftPayload(ctx, input, calcResult, paymentStatus, roundOff, totalInvoice)
+		state := s.computeDraftState(calcResult, existingPayments, draftPayments, newPaymentTotal)
+
+		s.updateDraftMetadata(draft, input, state, calcResult)
+
+		draft.DraftJSON, err = s.buildDraftPayload(ctx, input, calcResult, state)
 		if err != nil {
 			return err
 		}
 
-		persistedPayments, err := s.persistDraft(ctx, txDraftRepo, input, draft, draftPayload, calcResult, status, totalDiscount, totalReceived, draftPayments, combinedCacheKey)
+		persistedPayments, err := s.persistDraft(ctx, txDraftRepo, input, draft, calcResult, draftPayments, combinedCacheKey)
 		if err != nil {
 			return err
 		}
@@ -254,6 +251,62 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 	}
 
 	return out, nil
+}
+
+type draftStateTotals struct {
+	TotalInvoice  float64
+	RoundOff      float64
+	TotalDiscount float64
+	TotalReceived float64
+	PaymentStatus string
+	DraftStatus   string
+}
+
+func (s *SalesInvoiceService) computeDraftState(
+	calcResult DraftCalculationResult,
+	existingPayments []model.SalesInvoiceDraftPayment,
+	draftPayments []model.SalesInvoiceDraftPayment,
+	newPaymentTotal float64,
+) draftStateTotals {
+	totalInvoice := math.Round(calcResult.TotalBill)
+	totalReceived := round2(totalReceivedFromDraftPayments(existingPayments) + newPaymentTotal)
+
+	return draftStateTotals{
+		TotalInvoice:  totalInvoice,
+		RoundOff:      totalInvoice - calcResult.TotalBill,
+		TotalDiscount: calcResult.TotalAmount - calcResult.TotalBill,
+		TotalReceived: totalReceived,
+		PaymentStatus: resolvePaymentStatus(totalReceived, totalInvoice),
+		DraftStatus:   resolveDraftStatus(len(existingPayments) > 0 || len(draftPayments) > 0),
+	}
+}
+
+func (s *SalesInvoiceService) updateDraftMetadata(
+	draft *model.SalesInvoiceDraftJSON,
+	input CreateOrUpdateSalesInvoiceInput,
+	state draftStateTotals,
+	calcResult DraftCalculationResult,
+) {
+	draft.StoreID = input.StoreID
+	draft.OrganizationID = input.OrganizationID
+	draft.BillingUserID = input.BillingUserID
+	draft.CustomerID = input.CustomerID
+	draft.CustomerAddressID = input.CustomerAddressID
+	draft.DoctorID = input.DoctorID
+	draft.PatientID = input.PatientID
+	draft.Status = state.DraftStatus
+	draft.PaymentStatus = state.PaymentStatus
+	draft.TotalBillAmount = calcResult.TotalBill
+	draft.PrepaidAmount = 0
+	draft.RoundOff = state.RoundOff
+	draft.TotalInvoiceAmount = state.TotalInvoice
+	draft.TotalAmount = calcResult.TotalAmount
+	draft.TotalDiscount = state.TotalDiscount
+	draft.TotalAmountReceived = state.TotalReceived
+	draft.TillID = input.TillID
+	draft.TillTransactionID = input.TillTransactionID
+	draft.UpdatedBy = &input.UserID
+	draft.UpdatedAt = time.Now()
 }
 
 func (s *SalesInvoiceService) handlePaymentOnlyUpdate(
@@ -313,9 +366,7 @@ func (s *SalesInvoiceService) buildDraftPayload(
 	ctx context.Context,
 	input CreateOrUpdateSalesInvoiceInput,
 	calcResult DraftCalculationResult,
-	paymentStatus string,
-	roundOff float64,
-	totalInvoice float64,
+	state draftStateTotals,
 ) (model.DraftJSONPayload, error) {
 	isHomeDelivery := false
 	if input.IsHomeDelivery != nil {
@@ -330,7 +381,7 @@ func (s *SalesInvoiceService) buildDraftPayload(
 	draftPayload := model.DraftJSONPayload{
 		IsHomeDelivery:             isHomeDelivery,
 		IsActive:                   true,
-		PaymentStatus:              paymentStatus,
+		PaymentStatus:              state.PaymentStatus,
 		DeviceMasterID:             input.DeviceMasterID,
 		PromoCode:                  input.PromoCode,
 		Notes:                      input.Notes,
@@ -343,14 +394,14 @@ func (s *SalesInvoiceService) buildDraftPayload(
 		IGST:                       calcResult.TotalIGST,
 		DeliveryCharges:            0,
 		TaxableAmount:              calcResult.TaxableAmount,
-		RoundOff:                   roundOff,
+		RoundOff:                   state.RoundOff,
 		CINNumber:                  storeInfo.CinNumber,
 		GSTNumber:                  &storeInfo.GstNumber,
 		GSTTreatment:               storeInfo.GstTreatment,
 		PlaceOfSupplyCode:          storeInfo.PlaceOfSupplyCode,
 		TotalAmount:                calcResult.TotalAmount,
 		TotalBillAmount:            calcResult.TotalBill,
-		TotalInvoiceAmount:         totalInvoice,
+		TotalInvoiceAmount:         state.TotalInvoice,
 		TotalBillAmountBeforePromo: calcResult.TotalBill,
 		Products:                   mapLinesToDraftProducts(calcResult.Lines),
 	}
@@ -362,40 +413,13 @@ func (s *SalesInvoiceService) persistDraft(
 	txDraftRepo repository.SalesInvoiceDraftRepository,
 	input CreateOrUpdateSalesInvoiceInput,
 	draft *model.SalesInvoiceDraftJSON,
-	draftPayload model.DraftJSONPayload,
 	calcResult DraftCalculationResult,
-	status string,
-	totalDiscount float64,
-	totalReceived float64,
 	draftPayments []model.SalesInvoiceDraftPayment,
 	combinedCacheKey string,
 ) ([]model.SalesInvoiceDraftPayment, error) {
-	now := time.Now()
-	draft.StoreID = input.StoreID
-	draft.OrganizationID = input.OrganizationID
-	draft.BillingUserID = input.BillingUserID
-	draft.CustomerID = input.CustomerID
-	draft.CustomerAddressID = input.CustomerAddressID
-	draft.DoctorID = input.DoctorID
-	draft.PatientID = input.PatientID
-	draft.Status = status
-	draft.PaymentStatus = draftPayload.PaymentStatus
-	draft.TotalBillAmount = calcResult.TotalBill
-	draft.PrepaidAmount = 0
-	draft.RoundOff = draftPayload.RoundOff
-	draft.TotalInvoiceAmount = draftPayload.TotalInvoiceAmount
-	draft.TotalAmount = calcResult.TotalAmount
-	draft.TotalDiscount = totalDiscount
-	draft.TotalAmountReceived = totalReceived
-	draft.DraftJSON = draftPayload
-	draft.TillID = input.TillID
-	draft.TillTransactionID = input.TillTransactionID
-	draft.UpdatedBy = &input.UserID
-	draft.UpdatedAt = now
-
 	if draft.ID == 0 {
 		draft.CreatedBy = input.UserID
-		draft.CreatedAt = now
+		draft.CreatedAt = draft.UpdatedAt
 		if err := txDraftRepo.CreateDraft(ctx, draft); err != nil {
 			return nil, err
 		}
