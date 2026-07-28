@@ -37,7 +37,6 @@ type CreateOrUpdateSalesInvoiceInput struct {
 	TillID            *uint64
 	TillTransactionID *uint64
 	UserID            uint64
-	ItemsPresent      bool
 	Items             []CreateOrUpdateSalesInvoiceItem
 	Payments          []CreateOrUpdateSalesInvoicePayment
 }
@@ -198,7 +197,7 @@ func (s *SalesInvoiceService) CreateOrUpdate(ctx context.Context, input CreateOr
 			return err
 		}
 
-		if input.ID != nil && !input.ItemsPresent {
+		if input.ID != nil && len(input.Items) == 0 {
 			out, err = s.handlePaymentOnlyUpdate(ctx, txDraftRepo, input, draft, combinedCacheKey)
 			return err
 		}
@@ -260,222 +259,6 @@ type draftStateTotals struct {
 	TotalReceived float64
 	PaymentStatus string
 	DraftStatus   string
-}
-
-func (s *SalesInvoiceService) computeDraftState(
-	calcResult DraftCalculationResult,
-	existingPayments []model.SalesInvoiceDraftPayment,
-	draftPayments []model.SalesInvoiceDraftPayment,
-	newPaymentTotal float64,
-) draftStateTotals {
-	totalInvoice := math.Round(calcResult.TotalBill)
-	totalReceived := round2(totalReceivedFromDraftPayments(existingPayments) + newPaymentTotal)
-
-	return draftStateTotals{
-		TotalInvoice:  totalInvoice,
-		RoundOff:      totalInvoice - calcResult.TotalBill,
-		TotalDiscount: calcResult.TotalAmount - calcResult.TotalBill,
-		TotalReceived: totalReceived,
-		PaymentStatus: resolvePaymentStatus(totalReceived, totalInvoice),
-		DraftStatus:   resolveDraftStatus(len(existingPayments) > 0 || len(draftPayments) > 0),
-	}
-}
-
-func (s *SalesInvoiceService) updateDraftMetadata(
-	draft *model.SalesInvoiceDraftJSON,
-	input CreateOrUpdateSalesInvoiceInput,
-	state draftStateTotals,
-	calcResult DraftCalculationResult,
-) {
-	draft.StoreID = input.StoreID
-	draft.OrganizationID = input.OrganizationID
-	draft.BillingUserID = input.BillingUserID
-	draft.CustomerID = input.CustomerID
-	draft.CustomerAddressID = input.CustomerAddressID
-	draft.DoctorID = input.DoctorID
-	draft.PatientID = input.PatientID
-	draft.Status = state.DraftStatus
-	draft.PaymentStatus = state.PaymentStatus
-	draft.TotalBillAmount = calcResult.TotalBill
-	draft.PrepaidAmount = 0
-	draft.RoundOff = state.RoundOff
-	draft.TotalInvoiceAmount = state.TotalInvoice
-	draft.TotalAmount = calcResult.TotalAmount
-	draft.TotalDiscount = state.TotalDiscount
-	draft.TotalAmountReceived = state.TotalReceived
-	draft.TillID = input.TillID
-	draft.TillTransactionID = input.TillTransactionID
-	draft.UpdatedBy = &input.UserID
-	draft.UpdatedAt = time.Now()
-}
-
-func (s *SalesInvoiceService) handlePaymentOnlyUpdate(
-	ctx context.Context,
-	txDraftRepo repository.SalesInvoiceDraftRepository,
-	input CreateOrUpdateSalesInvoiceInput,
-	draft *model.SalesInvoiceDraftJSON,
-	combinedCacheKey string,
-) (*CreateOrUpdateSalesInvoiceOutput, error) {
-	existingPayments, err := txDraftRepo.GetDraftPayments(ctx, draft.ID)
-	if err != nil {
-		return nil, err
-	}
-	_, draftPayments := buildDraftPayments(input, draft.ID)
-	if err := txDraftRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
-		return nil, err
-	}
-	if len(draftPayments) > 0 {
-		existingPayments, err = txDraftRepo.GetDraftPayments(ctx, draft.ID)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	draft.DraftJSON.Products = []model.DraftProductJSON{}
-	draft.DraftJSON.TotalProducts = 0
-	draft.DraftJSON.TotalItems = 0
-	draft.DraftJSON.TotalQuantity = 0
-	draft.DraftJSON.TotalGST = 0
-	draft.DraftJSON.SGST = 0
-	draft.DraftJSON.CGST = 0
-	draft.DraftJSON.IGST = 0
-	draft.DraftJSON.DeliveryCharges = 0
-	draft.DraftJSON.TaxableAmount = 0
-	draft.DraftJSON.RoundOff = 0
-	draft.TotalAmount = 0
-	draft.TotalBillAmount = 0
-	draft.TotalInvoiceAmount = 0
-	draft.TotalAmountReceived = totalReceivedFromDraftPayments(existingPayments)
-	draft.TotalDiscount = 0
-	draft.RoundOff = 0
-	draft.Status = resolveDraftStatus(len(existingPayments) > 0 || len(draftPayments) > 0)
-	draft.PaymentStatus = resolvePaymentStatus(draft.TotalAmountReceived, 0)
-	draft.UpdatedBy = &input.UserID
-	if err := txDraftRepo.SaveDraft(ctx, draft); err != nil {
-		return nil, err
-	}
-
-	cacheData := draftCacheData{SalesInvoiceDraft: *draft, CalculatedProductData: draftCalculatedProductContainer{Products: map[string]model.DraftProductJSON{}}}
-	_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
-
-	out := &CreateOrUpdateSalesInvoiceOutput{Data: s.buildDraftResponse(*draft, nil, existingPayments), Message: "Sales Invoice (Draft) Updated Successfully"}
-	return out, nil
-}
-
-func (s *SalesInvoiceService) buildDraftPayload(
-	ctx context.Context,
-	input CreateOrUpdateSalesInvoiceInput,
-	calcResult DraftCalculationResult,
-	state draftStateTotals,
-) (model.DraftJSONPayload, error) {
-	isHomeDelivery := false
-	if input.IsHomeDelivery != nil {
-		isHomeDelivery = *input.IsHomeDelivery
-	}
-
-	storeInfo, err := s.storeCache.Get(ctx, int(input.StoreID))
-	if err != nil {
-		return model.DraftJSONPayload{}, err
-	}
-
-	draftPayload := model.DraftJSONPayload{
-		IsHomeDelivery:             isHomeDelivery,
-		IsActive:                   true,
-		PaymentStatus:              state.PaymentStatus,
-		DeviceMasterID:             input.DeviceMasterID,
-		PromoCode:                  input.PromoCode,
-		Notes:                      input.Notes,
-		TotalProducts:              calcResult.TotalProducts,
-		TotalItems:                 calcResult.TotalItems,
-		TotalQuantity:              calcResult.TotalQty,
-		TotalGST:                   calcResult.TotalGST,
-		SGST:                       calcResult.TotalSGST,
-		CGST:                       calcResult.TotalCGST,
-		IGST:                       calcResult.TotalIGST,
-		DeliveryCharges:            0,
-		TaxableAmount:              calcResult.TaxableAmount,
-		RoundOff:                   state.RoundOff,
-		CINNumber:                  storeInfo.CinNumber,
-		GSTNumber:                  &storeInfo.GstNumber,
-		GSTTreatment:               storeInfo.GstTreatment,
-		PlaceOfSupplyCode:          storeInfo.PlaceOfSupplyCode,
-		TotalAmount:                calcResult.TotalAmount,
-		TotalBillAmount:            calcResult.TotalBill,
-		TotalInvoiceAmount:         state.TotalInvoice,
-		TotalBillAmountBeforePromo: calcResult.TotalBill,
-		Products:                   mapLinesToDraftProducts(calcResult.Lines),
-	}
-	return draftPayload, nil
-}
-
-func (s *SalesInvoiceService) persistDraft(
-	ctx context.Context,
-	txDraftRepo repository.SalesInvoiceDraftRepository,
-	input CreateOrUpdateSalesInvoiceInput,
-	draft *model.SalesInvoiceDraftJSON,
-	calcResult DraftCalculationResult,
-	draftPayments []model.SalesInvoiceDraftPayment,
-	combinedCacheKey string,
-) ([]model.SalesInvoiceDraftPayment, error) {
-	if draft.ID == 0 {
-		draft.CreatedBy = input.UserID
-		draft.CreatedAt = draft.UpdatedAt
-		if err := txDraftRepo.CreateDraft(ctx, draft); err != nil {
-			return nil, err
-		}
-		combinedCacheKey = s.buildDraftCacheKeys(input.StoreID, &draft.ID)
-	} else {
-		if err := txDraftRepo.SaveDraft(ctx, draft); err != nil {
-			return nil, err
-		}
-	}
-
-	for i := range draftPayments {
-		draftPayments[i].SalesInvoiceDraftID = draft.ID
-	}
-	if err := txDraftRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
-		return nil, err
-	}
-
-	persistedPayments, _ := txDraftRepo.GetDraftPayments(ctx, draft.ID)
-	cacheData := draftCacheData{
-		SalesInvoiceDraft:     *draft,
-		CalculatedProductData: draftCalculatedProductContainer{Products: s.linesToProductsMap(calcResult.Lines)},
-	}
-	_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
-
-	return persistedPayments, nil
-}
-
-func (s *SalesInvoiceService) finalizeDraft(
-	ctx context.Context,
-	txInvoiceRepo repository.SalesInvoiceRepository,
-	txInventoryRepo repository.StoreInventoryRepository,
-	txDraftRepo repository.SalesInvoiceDraftRepository,
-	input CreateOrUpdateSalesInvoiceInput,
-	draft *model.SalesInvoiceDraftJSON,
-	calcResult DraftCalculationResult,
-	persistedPayments []model.SalesInvoiceDraftPayment,
-	combinedCacheKey string,
-) (uint64, error) {
-	if !hasAdvanceRefundPayment(persistedPayments) && round2(draft.TotalAmountReceived+draft.PrepaidAmount) != round2(draft.TotalInvoiceAmount) {
-		return 0, fmt.Errorf("entered amount is more then the bill amount, please enter proper amount")
-	}
-
-	invoiceID, err := s.finalizeInvoice(ctx, txInvoiceRepo, txInventoryRepo, txDraftRepo, input, draft, calcResult.Lines)
-	if err != nil {
-		return 0, err
-	}
-
-	// cache final state as draft slot with updated status
-	draft.Status = constants.SalesInvoiceStatusInvoiced
-	cacheData := draftCacheData{
-		SalesInvoiceDraft:     *draft,
-		CalculatedProductData: draftCalculatedProductContainer{Products: s.linesToProductsMap(calcResult.Lines)},
-	}
-	_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
-
-	return invoiceID, nil
 }
 
 func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrUpdateSalesInvoiceInput) error {
@@ -572,6 +355,28 @@ func (s *SalesInvoiceService) validateInput(ctx context.Context, input CreateOrU
 
 	return nil
 }
+func (s *SalesInvoiceService) buildDraftCacheKeys(storeID uint64, draftID *uint64) string {
+	id := uint64(0)
+	if draftID != nil {
+		id = *draftID
+	}
+	key := s.cfg.PrefixDraftBillCache + strconv.FormatUint(id, 10)
+	tag := s.cfg.PrefixDraftBillCacheTags + strconv.FormatUint(storeID, 10)
+	return tag + ":" + key
+}
+
+func (s *SalesInvoiceService) getDraftCache(ctx context.Context, combinedKey string) (*draftCacheData, error) {
+	var data draftCacheData
+	err := s.cache.GetPHPSerialized(ctx, combinedKey, &data)
+	if err != nil {
+		return nil, err
+	}
+	if data.CalculatedProductData.Products == nil {
+		data.CalculatedProductData.Products = map[string]model.DraftProductJSON{}
+	}
+	return &data, nil
+}
+
 func (s *SalesInvoiceService) loadOrCreateDraft(ctx context.Context, draftRepo repository.SalesInvoiceDraftRepository, input CreateOrUpdateSalesInvoiceInput, cachedData *draftCacheData) (*model.SalesInvoiceDraftJSON, error) {
 	if cachedData != nil && cachedData.SalesInvoiceDraft.ID != 0 {
 		draft := cachedData.SalesInvoiceDraft
@@ -582,6 +387,157 @@ func (s *SalesInvoiceService) loadOrCreateDraft(ctx context.Context, draftRepo r
 		return draftRepo.GetDraftByID(ctx, *input.ID, input.StoreID, input.OrganizationID)
 	}
 	return &model.SalesInvoiceDraftJSON{}, nil
+}
+
+func (s *SalesInvoiceService) handlePaymentOnlyUpdate(
+	ctx context.Context,
+	txDraftRepo repository.SalesInvoiceDraftRepository,
+	input CreateOrUpdateSalesInvoiceInput,
+	draft *model.SalesInvoiceDraftJSON,
+	combinedCacheKey string,
+) (*CreateOrUpdateSalesInvoiceOutput, error) {
+	existingPayments, err := txDraftRepo.GetDraftPayments(ctx, draft.ID)
+	if err != nil {
+		return nil, err
+	}
+	_, draftPayments := buildDraftPayments(input, draft.ID)
+	if err := txDraftRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
+		return nil, err
+	}
+	if len(draftPayments) > 0 {
+		existingPayments, err = txDraftRepo.GetDraftPayments(ctx, draft.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	draft.DraftJSON.Products = []model.DraftProductJSON{}
+	draft.DraftJSON.TotalProducts = 0
+	draft.DraftJSON.TotalItems = 0
+	draft.DraftJSON.TotalQuantity = 0
+	draft.DraftJSON.TotalGST = 0
+	draft.DraftJSON.SGST = 0
+	draft.DraftJSON.CGST = 0
+	draft.DraftJSON.IGST = 0
+	draft.DraftJSON.DeliveryCharges = 0
+	draft.DraftJSON.TaxableAmount = 0
+	draft.DraftJSON.RoundOff = 0
+	draft.TotalAmount = 0
+	draft.TotalBillAmount = 0
+	draft.TotalInvoiceAmount = 0
+	draft.TotalAmountReceived = totalReceivedFromDraftPayments(existingPayments)
+	draft.TotalDiscount = 0
+	draft.RoundOff = 0
+	draft.Status = resolveDraftStatus(len(existingPayments) > 0 || len(draftPayments) > 0)
+	draft.PaymentStatus = resolvePaymentStatus(draft.TotalAmountReceived, 0)
+	draft.UpdatedBy = &input.UserID
+	if err := txDraftRepo.SaveDraft(ctx, draft); err != nil {
+		return nil, err
+	}
+
+	cacheData := draftCacheData{SalesInvoiceDraft: *draft, CalculatedProductData: draftCalculatedProductContainer{Products: map[string]model.DraftProductJSON{}}}
+	_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
+
+	out := &CreateOrUpdateSalesInvoiceOutput{Data: s.buildDraftResponse(*draft, nil, existingPayments), Message: "Sales Invoice (Draft) Updated Successfully"}
+	return out, nil
+}
+
+func buildDraftPayments(input CreateOrUpdateSalesInvoiceInput, draftID uint64) (float64, []model.SalesInvoiceDraftPayment) {
+	now := time.Now()
+	totalReceived := 0.0
+	payments := make([]model.SalesInvoiceDraftPayment, 0, len(input.Payments))
+	for _, p := range input.Payments {
+		if p.ID != nil && *p.ID > 0 {
+			continue
+		}
+		amount := round2(p.Amount)
+		ptype := constants.SalesPaymentTypeSales
+		if p.IsAdvanceRefund {
+			amount = -amount
+			ptype = constants.SalesPaymentTypeAdvanceRefund
+		} else {
+			totalReceived += amount
+		}
+		payments = append(payments, model.SalesInvoiceDraftPayment{
+			SalesInvoiceDraftID:  draftID,
+			StoreID:              input.StoreID,
+			StorePaymentMethodID: p.StorePaymentMethodID,
+			Amount:               amount,
+			VoucherCode:          p.VoucherCode,
+			Type:                 ptype,
+			DeviceMasterID:       input.DeviceMasterID,
+			CreatedBy:            input.UserID,
+			CreatedAt:            now,
+			UpdatedAt:            now,
+		})
+	}
+	return round2(totalReceived), payments
+}
+
+func totalReceivedFromDraftPayments(payments []model.SalesInvoiceDraftPayment) float64 {
+	total := 0.0
+	for _, payment := range payments {
+		if payment.Type == constants.SalesPaymentTypeAdvanceRefund {
+			continue
+		}
+		total += payment.Amount
+	}
+	return round2(total)
+}
+
+func resolveDraftStatus(hasPayments bool) string {
+	if hasPayments {
+		return constants.SalesInvoiceStatusPaymentPending
+	}
+	return constants.SalesInvoiceStatusDraft
+}
+
+func resolvePaymentStatus(totalReceived, invoiceTotal float64) string {
+	totalReceived = round2(totalReceived)
+	invoiceTotal = round2(invoiceTotal)
+	switch {
+	case totalReceived == 0:
+		return constants.SalesPaymentStatusDraft
+	case totalReceived >= invoiceTotal:
+		return constants.SalesPaymentStatusFullyPaid
+	default:
+		return constants.SalesPaymentStatusPartiallyPaid
+	}
+}
+
+func (s *SalesInvoiceService) buildDraftResponse(draft model.SalesInvoiceDraftJSON, items []model.DraftProductJSON, payments []model.SalesInvoiceDraftPayment) draftResponse {
+	payload := draft.DraftJSON
+	if items == nil {
+		items = payload.Products
+	}
+	pRes := make([]draftPaymentResp, 0, len(payments))
+	for _, p := range payments {
+		pRes = append(pRes, draftPaymentResp{ID: p.ID, Amount: p.Amount, VoucherCode: p.VoucherCode, StorePaymentMethodID: p.StorePaymentMethodID, Type: p.Type})
+	}
+
+	return draftResponse{
+		ID:                   draft.ID,
+		OrganizationID:       draft.OrganizationID,
+		IsHomeDelivery:       payload.IsHomeDelivery,
+		TotalProducts:        payload.TotalProducts,
+		TotalItems:           payload.TotalItems,
+		TotalQuantity:        payload.TotalQuantity,
+		PrepaidAmount:        round2(draft.PrepaidAmount),
+		TotalInvoiceAmount:   round2(draft.TotalInvoiceAmount),
+		TotalAmountReceived:  round2(draft.TotalAmountReceived),
+		AmountDue:            round2(draft.TotalInvoiceAmount - draft.PrepaidAmount - draft.TotalAmountReceived),
+		DeliveryCharges:      payload.DeliveryCharges,
+		TotalMRP:             round2(draft.TotalAmount),
+		TotalSavings:         round2(draft.TotalDiscount),
+		TaxableAmount:        round2(payload.TaxableAmount),
+		Status:               draft.Status,
+		PaymentStatus:        draft.PaymentStatus,
+		RoundOff:             round2(payload.RoundOff),
+		TotalBillBeforePromo: round2(payload.TotalBillAmountBeforePromo),
+		PromoCode:            payload.PromoCode,
+		Items:                items,
+		Payments:             pRes,
+	}
 }
 
 func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, inventoryRepo repository.StoreInventoryRepository, productRepo repository.ProductRepository, input CreateOrUpdateSalesInvoiceInput, cachedData *draftCacheData) (DraftCalculationResult, error) {
@@ -706,344 +662,101 @@ func (s *SalesInvoiceService) calculateDraftLines(ctx context.Context, inventory
 	return result, nil
 }
 
-func (s *SalesInvoiceService) finalizeInvoice(
-	ctx context.Context,
-	invoiceRepo repository.SalesInvoiceRepository,
-	inventoryRepo repository.StoreInventoryRepository,
-	draftRepo repository.SalesInvoiceDraftRepository,
-	input CreateOrUpdateSalesInvoiceInput,
-	draft *model.SalesInvoiceDraftJSON,
-	lines []draftComputedLine,
-) (uint64, error) {
-	draftPayload := draft.DraftJSON
-
-	var gstTreatment *string
-	if draftPayload.GSTTreatment != "" {
-		gstTreatment = &draftPayload.GSTTreatment
-	}
-	var placeOfSupplyCode *string
-	if draftPayload.PlaceOfSupplyCode != "" {
-		placeOfSupplyCode = &draftPayload.PlaceOfSupplyCode
-	}
-
-	invoice := model.SalesInvoice{
-		OrganizationID:              draft.OrganizationID,
-		SalesInvoiceDraftID:         draft.ID,
-		StoreID:                     draft.StoreID,
-		BillingUserID:               draft.BillingUserID,
-		CustomerID:                  draft.CustomerID,
-		CustomerAddressID:           draft.CustomerAddressID,
-		DoctorID:                    draft.DoctorID,
-		PatientID:                   draft.PatientID,
-		OrderType:                   constants.SalesPaymentTypeSales,
-		IsHomeDelivery:              draftPayload.IsHomeDelivery,
-		PaymentStatus:               &draft.PaymentStatus,
-		TotalBillAmount:             draftPayload.TotalBillAmount,
-		TaxableAmount:               draftPayload.TaxableAmount,
-		TotalAmountBeforeDisc:       draftPayload.TotalBillAmount,
-		DiscountType:                "INR",
-		DiscountPercentage:          0,
-		DiscountAmount:              draftPayload.TotalAmount - draftPayload.TotalBillAmount,
-		IGST:                        draftPayload.IGST,
-		CGST:                        draftPayload.CGST,
-		SGST:                        draftPayload.SGST,
-		PrepaidAmount:               draft.PrepaidAmount,
-		TotalGST:                    draftPayload.TotalGST,
-		RoundOff:                    draftPayload.RoundOff,
-		TotalInvoiceAmount:          draftPayload.TotalInvoiceAmount,
-		TotalProducts:               draftPayload.TotalProducts,
-		TotalItems:                  draftPayload.TotalItems,
-		TotalQuantity:               draftPayload.TotalQuantity,
-		TotalAmount:                 draftPayload.TotalAmount,
-		TotalDiscount:               draft.TotalDiscount,
-		TotalAmountReceived:         draft.TotalAmountReceived,
-		TotalBillBeforePromo:        draftPayload.TotalBillAmountBeforePromo,
-		PromoCode:                   draftPayload.PromoCode,
-		Notes:                       draftPayload.Notes,
-		IsActive:                    true,
-		VoucherDiscountAmount:       0,
-		LoyaltyPoints:               0,
-		LoyaltyProgramDiscount:      draft.LoyaltyProgramDiscount,
-		IsLoyaltyUpdated:            false,
-		IsCustomerUpdated:           false,
-		IsSyncBill:                  false,
-		IsPrescriptionRequired:      draftPayload.IsPrescriptionRequired,
-		DeliveryCharges:             draftPayload.DeliveryCharges,
-		IsPrescriptionUploaded:      false,
-		PrescriptionUploadedBy:      nil,
-		GSTTreatment:                gstTreatment,
-		GSTNumber:                   draftPayload.GSTNumber,
-		CINNumber:                   draftPayload.CINNumber,
-		PlaceOfSupplyCode:           placeOfSupplyCode,
-		EditedUserID:                nil,
-		WhatsAppSentCount:           0,
-		IsRecommendationDataUpdated: false,
-		PrescriptionID:              draft.PrescriptionID,
-		CreatedBy:                   input.UserID,
-		DeviceMasterID:              draftPayload.DeviceMasterID,
-	}
-	if err := invoiceRepo.CreateInvoice(ctx, &invoice); err != nil {
-		return 0, err
-	}
-
-	productIDs, batchCodes := extractProductIDsAndBatchCodes(lines)
-	batchStocks, err := inventoryRepo.FetchBatchStocks(ctx, input.StoreID, productIDs, batchCodes, false, s.batchExpiryCutoff())
-	if err != nil {
-		return 0, err
-	}
-
-	details := make([]model.SalesInvoiceDetail, 0)
-	txns := make([]model.StoreInventoryTransaction, 0)
-	for _, line := range lines {
-		key := fmt.Sprintf("%d_%s", line.Item.ProductID, line.Item.BatchCode)
-		allocations, err := fulfillBatches(batchStocks[key], line.Item.Quantity, line.Item.ProductID, line.Item.BatchCode)
-		if err != nil {
-			return 0, err
-		}
-
-		for _, alloc := range allocations {
-			detail := model.SalesInvoiceDetail{
-				SalesInvoiceID:       invoice.ID,
-				StoreID:              invoice.StoreID,
-				ProductID:            line.Item.ProductID,
-				StoreBatchID:         &alloc.StoreBatchID,
-				PurchaseRate:         alloc.PurchaseRate,
-				BatchCode:            alloc.BatchCode,
-				ExpiryDate:           alloc.ExpiryDate,
-				MRP:                  line.Batch.MRP,
-				SalesRate:            line.SalesRate,
-				BaseRate:             line.BaseRate,
-				BillAmount:           round2(float64(alloc.QuantityTaken) * line.SalesRate),
-				Quantity:             alloc.QuantityTaken,
-				DiscountType:         line.DiscountType,
-				DiscountPercentage:   line.DiscountPct,
-				DiscountAmount:       line.DiscountAmt,
-				GSTPercentage:        line.GSTPct,
-				GSTAmount:            line.GSTAmount,
-				TotalAmount:          round2(float64(alloc.QuantityTaken) * line.Batch.MRP),
-				AmountBeforeDiscount: line.SalesRate,
-				SalesRateBeforePromo: &line.SalesRateBeforePromo,
-				CreatedBy:            input.UserID,
-				DeviceMasterID:       input.DeviceMasterID,
-				HSNCode:              &line.HSNCode,
-				IsFreeProduct:        &line.Item.IsFreeProduct,
-			}
-			details = append(details, detail)
-			/*
-				^
-				Note on DiscountAmount and GSTAmount:
-				We deliberately do NOT prorate these amounts across split batch allocations.
-				Normally, you would calculate these as:
-				round2(float64(alloc.QuantityTaken) / float64(line.Item.Quantity) * line.GSTAmount)
-
-				However, in the Laravel backend's invoiceDetail API, the SQL query uses a
-				GROUP BY clause that groups on 'discount_amount' and 'gst_amount' instead of summing them:
-				->groupBy('product_id', 'batch_code', ..., 'discount_amount', 'gst_amount')
-
-				If we prorated these values here, split rows would have different discount/GST amounts.
-				The GROUP BY clause would then fail to match them, causing the frontend to
-				render two separate line items instead of collapsing them. By writing the total
-				un-prorated amount into every split row, we perfectly mimic Laravel's behavior
-				so the GROUP BY query successfully collapses the rows.
-			*/
-
-			txn := model.StoreInventoryTransaction{
-				StoreID:         input.StoreID,
-				ProductID:       line.Item.ProductID,
-				BatchCode:       line.Item.BatchCode,
-				StoreBatchID:    alloc.StoreBatchID,
-				ExpiryDate:      alloc.ExpiryDate,
-				Quantity:        -alloc.QuantityTaken,
-				Rate:            line.SalesRate,
-				TotalAmount:     round2(float64(-alloc.QuantityTaken) * line.SalesRate),
-				VoucherType:     "SALES_INVOICE",
-				VoucherID:       invoice.ID,
-				CreatedBy:       input.UserID,
-				TransactionTime: time.Now(),
-			}
-			txns = append(txns, txn)
-		}
-	}
-
-	if err := invoiceRepo.CreateInvoiceDetails(ctx, &details); err != nil {
-		return 0, err
-	}
-
-	// build a map for fast lookup of computed lines
-	lineMap := make(map[string]*draftComputedLine, len(lines))
-	for i := range lines {
-		l := &lines[i]
-		k := fmt.Sprintf("%d_%s", l.Item.ProductID, l.Item.BatchCode)
-		lineMap[k] = l
-	}
-
-	var allTaxDetails []model.SalesInvoiceTaxDetail
-	for _, detail := range details {
-		k := fmt.Sprintf("%d_%s", detail.ProductID, detail.BatchCode)
-		if matchedLine, ok := lineMap[k]; ok {
-			var taxDetails []model.SalesInvoiceTaxDetail
-			now := time.Now()
-			// compute tax per detail quantity
-			if matchedLine.IGST > 0 {
-				taxAmount := round2(float64(detail.Quantity) / float64(matchedLine.Item.Quantity) * matchedLine.IGST)
-				if taxAmount > 0 {
-					taxDetails = append(taxDetails, model.SalesInvoiceTaxDetail{
-						SalesInvoiceDetailID: detail.ID,
-						StoreID:              invoice.StoreID,
-						TaxType:              constants.TaxTypeAmount,
-						TaxRate:              matchedLine.GSTPct,
-						TaxName:              constants.TaxNameIGST,
-						TaxAmount:            taxAmount,
-						IsActive:             true,
-						CreatedBy:            input.UserID,
-						CreatedAt:            now,
-					})
-				}
-			} else if matchedLine.CGST > 0 || matchedLine.SGST > 0 {
-				sgstAmount := round2(float64(detail.Quantity) / float64(matchedLine.Item.Quantity) * matchedLine.SGST)
-				if sgstAmount > 0 {
-					taxDetails = append(taxDetails, model.SalesInvoiceTaxDetail{
-						SalesInvoiceDetailID: detail.ID,
-						StoreID:              invoice.StoreID,
-						TaxType:              constants.TaxTypeAmount,
-						TaxRate:              matchedLine.GSTPct / 2,
-						TaxName:              constants.TaxNameSGST,
-						TaxAmount:            sgstAmount,
-						IsActive:             true,
-						CreatedBy:            input.UserID,
-						CreatedAt:            now,
-					})
-				}
-				cgstAmount := round2(float64(detail.Quantity) / float64(matchedLine.Item.Quantity) * matchedLine.CGST)
-				if cgstAmount > 0 {
-					taxDetails = append(taxDetails, model.SalesInvoiceTaxDetail{
-						SalesInvoiceDetailID: detail.ID,
-						StoreID:              invoice.StoreID,
-						TaxType:              constants.TaxTypeAmount,
-						TaxRate:              matchedLine.GSTPct / 2,
-						TaxName:              constants.TaxNameCGST,
-						TaxAmount:            cgstAmount,
-						IsActive:             true,
-						CreatedBy:            input.UserID,
-						CreatedAt:            now,
-					})
-				}
-			}
-			allTaxDetails = append(allTaxDetails, taxDetails...)
-		}
-	}
-
-	if len(allTaxDetails) > 0 {
-		if err := invoiceRepo.CreateInvoiceTaxDetails(ctx, &allTaxDetails); err != nil {
-			return 0, err
-		}
-	}
-
-	if err := inventoryRepo.InsertInventoryTransactions(ctx, txns); err != nil {
-		return 0, err
-	}
-
-	draftPayments, err := draftRepo.GetDraftPayments(ctx, draft.ID)
-	if err != nil {
-		return 0, err
-	}
-
-	invoicePayments := make([]model.SalesInvoicePayment, 0, len(draftPayments))
-	for _, p := range draftPayments {
-		invoicePayments = append(invoicePayments, model.SalesInvoicePayment{
-			SalesInvoiceID:       invoice.ID,
-			StoreID:              invoice.StoreID,
-			StorePaymentMethodID: p.StorePaymentMethodID,
-			Amount:               p.Amount,
-			VoucherCode:          p.VoucherCode,
-			VoucherAmount:        p.VoucherAmount,
-			Type:                 p.Type,
-			CreatedBy:            p.CreatedBy,
-			DeviceMasterID:       p.DeviceMasterID,
-			TillID:               input.TillID,
-			TillTransactionID:    input.TillTransactionID,
-		})
-	}
-	if err := invoiceRepo.CreateInvoicePayments(ctx, invoicePayments); err != nil {
-		return 0, err
-	}
-
-	if err := draftRepo.MarkDraftInvoiced(ctx, draft.ID, input.UserID); err != nil {
-		return 0, err
-	}
-
-	return invoice.ID, nil
-}
-
-func (s *SalesInvoiceService) buildDraftCacheKeys(storeID uint64, draftID *uint64) string {
-	id := uint64(0)
-	if draftID != nil {
-		id = *draftID
-	}
-	key := s.cfg.PrefixDraftBillCache + strconv.FormatUint(id, 10)
-	tag := s.cfg.PrefixDraftBillCacheTags + strconv.FormatUint(storeID, 10)
-	return tag + ":" + key
-}
-
 func (s *SalesInvoiceService) batchExpiryCutoff() time.Time {
 	return time.Now().AddDate(0, 0, s.cfg.DefaultMinimumDaysForBatch).Truncate(24 * time.Hour)
 }
 
-func (s *SalesInvoiceService) getDraftCache(ctx context.Context, combinedKey string) (*draftCacheData, error) {
-	var data draftCacheData
-	err := s.cache.GetPHPSerialized(ctx, combinedKey, &data)
+func (s *SalesInvoiceService) computeDraftState(
+	calcResult DraftCalculationResult,
+	existingPayments []model.SalesInvoiceDraftPayment,
+	draftPayments []model.SalesInvoiceDraftPayment,
+	newPaymentTotal float64,
+) draftStateTotals {
+	totalInvoice := math.Round(calcResult.TotalBill)
+	totalReceived := round2(totalReceivedFromDraftPayments(existingPayments) + newPaymentTotal)
+
+	return draftStateTotals{
+		TotalInvoice:  totalInvoice,
+		RoundOff:      totalInvoice - calcResult.TotalBill,
+		TotalDiscount: calcResult.TotalAmount - calcResult.TotalBill,
+		TotalReceived: totalReceived,
+		PaymentStatus: resolvePaymentStatus(totalReceived, totalInvoice),
+		DraftStatus:   resolveDraftStatus(len(existingPayments) > 0 || len(draftPayments) > 0),
+	}
+}
+
+func (s *SalesInvoiceService) updateDraftMetadata(
+	draft *model.SalesInvoiceDraftJSON,
+	input CreateOrUpdateSalesInvoiceInput,
+	state draftStateTotals,
+	calcResult DraftCalculationResult,
+) {
+	draft.StoreID = input.StoreID
+	draft.OrganizationID = input.OrganizationID
+	draft.BillingUserID = input.BillingUserID
+	draft.CustomerID = input.CustomerID
+	draft.CustomerAddressID = input.CustomerAddressID
+	draft.DoctorID = input.DoctorID
+	draft.PatientID = input.PatientID
+	draft.Status = state.DraftStatus
+	draft.PaymentStatus = state.PaymentStatus
+	draft.TotalBillAmount = calcResult.TotalBill
+	draft.PrepaidAmount = 0
+	draft.RoundOff = state.RoundOff
+	draft.TotalInvoiceAmount = state.TotalInvoice
+	draft.TotalAmount = calcResult.TotalAmount
+	draft.TotalDiscount = state.TotalDiscount
+	draft.TotalAmountReceived = state.TotalReceived
+	draft.TillID = input.TillID
+	draft.TillTransactionID = input.TillTransactionID
+	draft.UpdatedBy = &input.UserID
+	draft.UpdatedAt = time.Now()
+}
+
+func (s *SalesInvoiceService) buildDraftPayload(
+	ctx context.Context,
+	input CreateOrUpdateSalesInvoiceInput,
+	calcResult DraftCalculationResult,
+	state draftStateTotals,
+) (model.DraftJSONPayload, error) {
+	isHomeDelivery := false
+	if input.IsHomeDelivery != nil {
+		isHomeDelivery = *input.IsHomeDelivery
+	}
+
+	storeInfo, err := s.storeCache.Get(ctx, int(input.StoreID))
 	if err != nil {
-		return nil, err
-	}
-	if data.CalculatedProductData.Products == nil {
-		data.CalculatedProductData.Products = map[string]model.DraftProductJSON{}
-	}
-	return &data, nil
-}
-
-func (s *SalesInvoiceService) linesToProductsMap(lines []draftComputedLine) map[string]model.DraftProductJSON {
-	products := mapLinesToDraftProducts(lines)
-	result := make(map[string]model.DraftProductJSON, len(products))
-	for _, p := range products {
-		k := fmt.Sprintf("%d_%s", p.ProductID, p.BatchCode)
-		result[k] = p
-	}
-	return result
-}
-
-func (s *SalesInvoiceService) buildDraftResponse(draft model.SalesInvoiceDraftJSON, items []model.DraftProductJSON, payments []model.SalesInvoiceDraftPayment) draftResponse {
-	payload := draft.DraftJSON
-	if items == nil {
-		items = payload.Products
-	}
-	pRes := make([]draftPaymentResp, 0, len(payments))
-	for _, p := range payments {
-		pRes = append(pRes, draftPaymentResp{ID: p.ID, Amount: p.Amount, VoucherCode: p.VoucherCode, StorePaymentMethodID: p.StorePaymentMethodID, Type: p.Type})
+		return model.DraftJSONPayload{}, err
 	}
 
-	return draftResponse{
-		ID:                   draft.ID,
-		OrganizationID:       draft.OrganizationID,
-		IsHomeDelivery:       payload.IsHomeDelivery,
-		TotalProducts:        payload.TotalProducts,
-		TotalItems:           payload.TotalItems,
-		TotalQuantity:        payload.TotalQuantity,
-		PrepaidAmount:        round2(draft.PrepaidAmount),
-		TotalInvoiceAmount:   round2(draft.TotalInvoiceAmount),
-		TotalAmountReceived:  round2(draft.TotalAmountReceived),
-		AmountDue:            round2(draft.TotalInvoiceAmount - draft.PrepaidAmount - draft.TotalAmountReceived),
-		DeliveryCharges:      payload.DeliveryCharges,
-		TotalMRP:             round2(draft.TotalAmount),
-		TotalSavings:         round2(draft.TotalDiscount),
-		TaxableAmount:        round2(payload.TaxableAmount),
-		Status:               draft.Status,
-		PaymentStatus:        draft.PaymentStatus,
-		RoundOff:             round2(payload.RoundOff),
-		TotalBillBeforePromo: round2(payload.TotalBillAmountBeforePromo),
-		PromoCode:            payload.PromoCode,
-		Items:                items,
-		Payments:             pRes,
+	draftPayload := model.DraftJSONPayload{
+		IsHomeDelivery:             isHomeDelivery,
+		IsActive:                   true,
+		PaymentStatus:              state.PaymentStatus,
+		DeviceMasterID:             input.DeviceMasterID,
+		PromoCode:                  input.PromoCode,
+		Notes:                      input.Notes,
+		TotalProducts:              calcResult.TotalProducts,
+		TotalItems:                 calcResult.TotalItems,
+		TotalQuantity:              calcResult.TotalQty,
+		TotalGST:                   calcResult.TotalGST,
+		SGST:                       calcResult.TotalSGST,
+		CGST:                       calcResult.TotalCGST,
+		IGST:                       calcResult.TotalIGST,
+		DeliveryCharges:            0,
+		TaxableAmount:              calcResult.TaxableAmount,
+		RoundOff:                   state.RoundOff,
+		CINNumber:                  storeInfo.CinNumber,
+		GSTNumber:                  &storeInfo.GstNumber,
+		GSTTreatment:               storeInfo.GstTreatment,
+		PlaceOfSupplyCode:          storeInfo.PlaceOfSupplyCode,
+		TotalAmount:                calcResult.TotalAmount,
+		TotalBillAmount:            calcResult.TotalBill,
+		TotalInvoiceAmount:         state.TotalInvoice,
+		TotalBillAmountBeforePromo: calcResult.TotalBill,
+		Products:                   mapLinesToDraftProducts(calcResult.Lines),
 	}
+	return draftPayload, nil
 }
 
 func mapLinesToDraftProducts(lines []draftComputedLine) []model.DraftProductJSON {
@@ -1098,47 +811,84 @@ func mapLinesToDraftProducts(lines []draftComputedLine) []model.DraftProductJSON
 	return products
 }
 
-func buildDraftPayments(input CreateOrUpdateSalesInvoiceInput, draftID uint64) (float64, []model.SalesInvoiceDraftPayment) {
-	now := time.Now()
-	totalReceived := 0.0
-	payments := make([]model.SalesInvoiceDraftPayment, 0, len(input.Payments))
-	for _, p := range input.Payments {
-		if p.ID != nil && *p.ID > 0 {
-			continue
+func (s *SalesInvoiceService) persistDraft(
+	ctx context.Context,
+	txDraftRepo repository.SalesInvoiceDraftRepository,
+	input CreateOrUpdateSalesInvoiceInput,
+	draft *model.SalesInvoiceDraftJSON,
+	calcResult DraftCalculationResult,
+	draftPayments []model.SalesInvoiceDraftPayment,
+	combinedCacheKey string,
+) ([]model.SalesInvoiceDraftPayment, error) {
+	if draft.ID == 0 {
+		draft.CreatedBy = input.UserID
+		draft.CreatedAt = draft.UpdatedAt
+		if err := txDraftRepo.CreateDraft(ctx, draft); err != nil {
+			return nil, err
 		}
-		amount := round2(p.Amount)
-		ptype := constants.SalesPaymentTypeSales
-		if p.IsAdvanceRefund {
-			amount = -amount
-			ptype = constants.SalesPaymentTypeAdvanceRefund
-		} else {
-			totalReceived += amount
+		combinedCacheKey = s.buildDraftCacheKeys(input.StoreID, &draft.ID)
+	} else {
+		if err := txDraftRepo.SaveDraft(ctx, draft); err != nil {
+			return nil, err
 		}
-		payments = append(payments, model.SalesInvoiceDraftPayment{
-			SalesInvoiceDraftID:  draftID,
-			StoreID:              input.StoreID,
-			StorePaymentMethodID: p.StorePaymentMethodID,
-			Amount:               amount,
-			VoucherCode:          p.VoucherCode,
-			Type:                 ptype,
-			DeviceMasterID:       input.DeviceMasterID,
-			CreatedBy:            input.UserID,
-			CreatedAt:            now,
-			UpdatedAt:            now,
-		})
 	}
-	return round2(totalReceived), payments
+
+	for i := range draftPayments {
+		draftPayments[i].SalesInvoiceDraftID = draft.ID
+	}
+	if err := txDraftRepo.AppendDraftPayments(ctx, draftPayments); err != nil {
+		return nil, err
+	}
+
+	persistedPayments, _ := txDraftRepo.GetDraftPayments(ctx, draft.ID)
+	cacheData := draftCacheData{
+		SalesInvoiceDraft:     *draft,
+		CalculatedProductData: draftCalculatedProductContainer{Products: s.linesToProductsMap(calcResult.Lines)},
+	}
+	_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
+
+	return persistedPayments, nil
 }
 
-func totalReceivedFromDraftPayments(payments []model.SalesInvoiceDraftPayment) float64 {
-	total := 0.0
-	for _, payment := range payments {
-		if payment.Type == constants.SalesPaymentTypeAdvanceRefund {
-			continue
-		}
-		total += payment.Amount
+func (s *SalesInvoiceService) linesToProductsMap(lines []draftComputedLine) map[string]model.DraftProductJSON {
+	products := mapLinesToDraftProducts(lines)
+	result := make(map[string]model.DraftProductJSON, len(products))
+	for _, p := range products {
+		k := fmt.Sprintf("%d_%s", p.ProductID, p.BatchCode)
+		result[k] = p
 	}
-	return round2(total)
+	return result
+}
+
+func (s *SalesInvoiceService) finalizeDraft(
+	ctx context.Context,
+	txInvoiceRepo repository.SalesInvoiceRepository,
+	txInventoryRepo repository.StoreInventoryRepository,
+	txDraftRepo repository.SalesInvoiceDraftRepository,
+	input CreateOrUpdateSalesInvoiceInput,
+	draft *model.SalesInvoiceDraftJSON,
+	calcResult DraftCalculationResult,
+	persistedPayments []model.SalesInvoiceDraftPayment,
+	combinedCacheKey string,
+) (uint64, error) {
+	if !hasAdvanceRefundPayment(persistedPayments) && round2(draft.TotalAmountReceived+draft.PrepaidAmount) != round2(draft.TotalInvoiceAmount) {
+		return 0, fmt.Errorf("entered amount is more then the bill amount, please enter proper amount")
+	}
+
+	invoiceID, err := s.finalizeInvoice(ctx, txInvoiceRepo, txInventoryRepo, txDraftRepo, input, draft, calcResult.Lines)
+	if err != nil {
+		return 0, err
+	}
+
+	// cache final state as draft slot with updated status
+	draft.Status = constants.SalesInvoiceStatusInvoiced
+	cacheData := draftCacheData{
+		SalesInvoiceDraft:     *draft,
+		CalculatedProductData: draftCalculatedProductContainer{Products: s.linesToProductsMap(calcResult.Lines)},
+	}
+	_ = s.cache.SetPHPSerialized(ctx, combinedCacheKey, cacheData, time.Duration(s.cfg.DraftCacheTTLMinutes)*time.Minute)
+
+	return invoiceID, nil
 }
 
 func hasAdvanceRefundPayment(payments []model.SalesInvoiceDraftPayment) bool {
@@ -1148,26 +898,6 @@ func hasAdvanceRefundPayment(payments []model.SalesInvoiceDraftPayment) bool {
 		}
 	}
 	return false
-}
-
-func resolveDraftStatus(hasPayments bool) string {
-	if hasPayments {
-		return constants.SalesInvoiceStatusPaymentPending
-	}
-	return constants.SalesInvoiceStatusDraft
-}
-
-func resolvePaymentStatus(totalReceived, invoiceTotal float64) string {
-	totalReceived = round2(totalReceived)
-	invoiceTotal = round2(invoiceTotal)
-	switch {
-	case totalReceived == 0:
-		return constants.SalesPaymentStatusDraft
-	case totalReceived >= invoiceTotal:
-		return constants.SalesPaymentStatusFullyPaid
-	default:
-		return constants.SalesPaymentStatusPartiallyPaid
-	}
 }
 
 func fulfillBatches(rows []repository.BatchStockRow, required int, productID uint64, batchCode string) ([]batchAllocation, error) {

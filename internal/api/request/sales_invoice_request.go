@@ -1,19 +1,19 @@
 package request
 
 type CreateOrUpdateSalesInvoiceRequest struct {
-	BillingUserID     uint64                       `json:"billing_user_id" binding:"required,gt=0"`
-	CustomerID        *uint64                      `json:"customer_id" binding:"omitempty,gt=0"`
-	CustomerAddressID *uint64                      `json:"customer_address_id" binding:"omitempty,gt=0"`
-	DoctorID          *uint64                      `json:"doctor_id" binding:"omitempty,gt=0"`
-	PatientID         *uint64                      `json:"patient_id" binding:"omitempty,gt=0"`
-	IsHomeDelivery    *bool                        `json:"is_home_delivery"`
-	IsConfirmed       *bool                        `json:"is_confirmed" binding:"required"`
-	PromoCode         *string                      `json:"promo_code"`
-	CourseDays        *float64                     `json:"course_days" binding:"omitempty,gt=0"`
-	Notes             *string                      `json:"notes"`
-	ASMUserID         *uint64                      `json:"asm_user_id" binding:"omitempty,gt=0"`
-	Items             *[]CreateOrUpdateInvoiceItem `json:"items"`
-	Payments          []CreateOrUpdatePayment      `json:"payments"`
+	BillingUserID     uint64                      `json:"billing_user_id" binding:"required,gt=0"`
+	CustomerID        *uint64                     `json:"customer_id" binding:"omitempty,gt=0"`
+	CustomerAddressID *uint64                     `json:"customer_address_id" binding:"omitempty,gt=0"`
+	DoctorID          *uint64                     `json:"doctor_id" binding:"omitempty,gt=0"`
+	PatientID         *uint64                     `json:"patient_id" binding:"omitempty,gt=0"`
+	IsHomeDelivery    *bool                       `json:"is_home_delivery"`
+	IsConfirmed       *bool                       `json:"is_confirmed" binding:"required"`
+	PromoCode         *string                     `json:"promo_code"`
+	CourseDays        *float64                    `json:"course_days" binding:"omitempty,gt=0"`
+	Notes             *string                     `json:"notes"`
+	ASMUserID         *uint64                     `json:"asm_user_id" binding:"omitempty,gt=0"`
+	Items             []CreateOrUpdateInvoiceItem `json:"items"`
+	Payments          []CreateOrUpdatePayment     `json:"payments"`
 }
 
 type CreateOrUpdateInvoiceItem struct {

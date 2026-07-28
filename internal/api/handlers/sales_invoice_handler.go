@@ -44,12 +44,6 @@ func (h *SalesInvoiceHandler) createOrUpdate(c *gin.Context, id *uint64) {
 		return
 	}
 
-	itemsPresent := body.Items != nil
-	items := []request.CreateOrUpdateInvoiceItem{}
-	if body.Items != nil {
-		items = *body.Items
-	}
-
 	input := service.CreateOrUpdateSalesInvoiceInput{
 		ID:                id,
 		OrganizationID:    h.salesCfg.DefaultOrganizationID,
@@ -69,12 +63,11 @@ func (h *SalesInvoiceHandler) createOrUpdate(c *gin.Context, id *uint64) {
 		TillID:            posCtx.TillID,
 		TillTransactionID: posCtx.TillTransactionID,
 		UserID:            posCtx.UserID,
-		ItemsPresent:      itemsPresent,
-		Items:             make([]service.CreateOrUpdateSalesInvoiceItem, 0, len(items)),
+		Items:             make([]service.CreateOrUpdateSalesInvoiceItem, 0, len(body.Items)),
 		Payments:          make([]service.CreateOrUpdateSalesInvoicePayment, 0, len(body.Payments)),
 	}
 
-	for _, it := range items {
+	for _, it := range body.Items {
 		input.Items = append(input.Items, service.CreateOrUpdateSalesInvoiceItem{
 			ProductID:      it.ProductID,
 			BatchCode:      it.BatchCode,
