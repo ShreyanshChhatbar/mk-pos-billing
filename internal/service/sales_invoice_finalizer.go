@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"mk-pos-billing/internal/constants"
 	"mk-pos-billing/internal/domain/model"
 	"mk-pos-billing/internal/domain/repository"
-	"mk-pos-billing/pkg/constants"
 )
 
 func (s *SalesInvoiceService) finalizeInvoice(

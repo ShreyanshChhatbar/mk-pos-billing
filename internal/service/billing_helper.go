@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
+	"mk-pos-billing/internal/constants"
 	domaincache "mk-pos-billing/internal/domain/cache"
 	"mk-pos-billing/internal/domain/model"
-	"mk-pos-billing/pkg/constants"
 )
 
 // TaxCalculationResult holds the calculated GST breakdown for a single line item.
