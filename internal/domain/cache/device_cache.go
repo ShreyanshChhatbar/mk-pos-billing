@@ -22,10 +22,10 @@ type DeviceCache interface {
 
 type deviceCache struct {
 	cacheSvc *cache.Service
-	prefixes config.CachePrefixes
+	prefixes *config.CachePrefixes
 }
 
-func NewDeviceCache(cacheSvc *cache.Service, prefixes config.CachePrefixes) DeviceCache {
+func NewDeviceCache(cacheSvc *cache.Service, prefixes *config.CachePrefixes) DeviceCache {
 	return &deviceCache{
 		cacheSvc: cacheSvc,
 		prefixes: prefixes,

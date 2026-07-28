@@ -4,4 +4,4 @@ tmp/
 .vscode
 .cache
 main
-api
+wire_gen.go

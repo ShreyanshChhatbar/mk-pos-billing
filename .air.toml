@@ -3,12 +3,12 @@ test_data_dir = "testdata"
 tmp_dir = "tmp"
 
 [build]
-  cmd = "go build -o ./tmp/main ./cmd/api/main.go"
+  cmd = "wire ./internal/container && go build -o ./tmp/main ./cmd/api/main.go"
   entrypoint = ["./tmp/main"]
   delay = 1000
-  exclude_dir = ["assets", "tmp", "vendor", "test", "logs"]
+  exclude_dir = ["assets", "tmp", "vendor", "api-docs", "api-flow", "test", "logs"]
+  exclude_regex = ["_test.go", "wire_gen.go$"]
   exclude_file = []
-  exclude_regex = ["_test.go"]
   exclude_unchanged = false
   follow_symlink = false
   full_bin = ""
@@ -22,7 +22,7 @@ tmp_dir = "tmp"
   rerun = false
   rerun_delay = 500
   send_interrupt = false
-  stop_on_error = false
+  stop_on_error = true
 
 [color]
   app = ""

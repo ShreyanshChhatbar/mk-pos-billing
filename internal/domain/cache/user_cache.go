@@ -13,10 +13,10 @@ type UserCache interface {
 
 type userCache struct {
 	cacheSvc *cache.Service
-	prefixes config.CachePrefixes
+	prefixes *config.CachePrefixes
 }
 
-func NewUserCache(cacheSvc *cache.Service, prefixes config.CachePrefixes) UserCache {
+func NewUserCache(cacheSvc *cache.Service, prefixes *config.CachePrefixes) UserCache {
 	return &userCache{
 		cacheSvc: cacheSvc,
 		prefixes: prefixes,

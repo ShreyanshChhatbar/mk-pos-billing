@@ -25,12 +25,12 @@ var _ CacheMasterService = (*cacheMasterService)(nil)
 
 type cacheMasterService struct {
 	cacheSvc *cache.Service
-	prefixes config.CachePrefixes
-	tags     config.CacheTags
+	prefixes *config.CachePrefixes
+	tags     *config.CacheTags
 	expiry   config.CacheExpiry
 }
 
-func NewCacheMasterService(cacheSvc *cache.Service, prefixes config.CachePrefixes, tags config.CacheTags, expiry config.CacheExpiry) CacheMasterService {
+func NewCacheMasterService(cacheSvc *cache.Service, prefixes *config.CachePrefixes, tags *config.CacheTags, expiry config.CacheExpiry) CacheMasterService {
 	return &cacheMasterService{
 		cacheSvc: cacheSvc,
 		prefixes: prefixes,

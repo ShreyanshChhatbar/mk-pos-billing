@@ -2,7 +2,7 @@ package main
 
 import (
 	"mk-pos-billing/internal/api/routes"
-	bootstrap "mk-pos-billing/internal/container"
+	"mk-pos-billing/internal/container"
 	"mk-pos-billing/internal/infrastructure/logger"
 	"os"
 	"time"
@@ -53,10 +53,9 @@ func main() {
 }
 
 func runServer() {
-	// ✅ Let Wire handle full DI including DB
-	app, err := bootstrap.InitializeServerApp()
+	routeCfg, err := container.InitializeRouteConfig()
 	if err != nil {
-		zap.L().Fatal("Failed to initialize app", zap.Error(err))
+		zap.L().Fatal("Failed to initialize route config", zap.Error(err))
 	}
 
 	// Gin setup
@@ -78,25 +77,11 @@ func runServer() {
 		AllowCredentials: true,
 	}))
 
-	// ✅ Log HTTP requests to console only in development
-	// if logger.ConsoleLoggingEnabled() {
-	// 	r.Use(gin.LoggerWithWriter(zap.NewStdLog(zap.L()).Writer()))
-	// }
-
 	// ✅ Recover from panics, log stack traces
 	r.Use(gin.RecoveryWithWriter(logger.Writer{}))
 
 	// Register API routes
-	routes.RegisterAllRoutes(r, routes.RouteConfig{
-		DuplicateRequestMiddleware:     app.DuplicateRequestMiddleware,
-		DeviceTokenValidateMiddleware:  app.DeviceTokenValidateMiddleware,
-		POSAuthTokenValidateMiddleware: app.POSAuthTokenValidateMiddleware,
-		MapTillMiddleware:              app.MapTillMiddleware,
-		SPOSCheckPermissionsMiddleware: app.SPOSCheckPermissionsMiddleware,
-		CheckTillStatusMiddleware:      app.CheckTillStatusMiddleware,
-		SalesInvoiceHandler:            app.SalesInvoiceHandler,
-		CacheTestHandler:               app.CacheTestHandler,
-	})
+	routes.RegisterAllRoutes(r, routeCfg)
 
 	port := os.Getenv("PORT")
 	zap.L().Info("Starting web server", zap.String("port", port), zap.String("env", os.Getenv("APP_ENV")))

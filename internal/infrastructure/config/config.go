@@ -99,8 +99,8 @@ func slugify(s string) string {
 
 type CacheConfig struct {
 	Prefix   string
-	Prefixes CachePrefixes
-	Tags     CacheTags
+	Prefixes *CachePrefixes
+	Tags     *CacheTags
 	Expiry   CacheExpiry
 }
 
@@ -157,14 +157,14 @@ func LoadCacheConfig() CacheConfig {
 
 	return CacheConfig{
 		Prefix:   prefix,
-		Prefixes: loadCachePrefixes(),
-		Tags:     loadCacheTags(),
-		Expiry:   loadCacheExpiry(),
+		Prefixes: LoadCachePrefixes(),
+		Tags:     LoadCacheTags(),
+		Expiry:   LoadCacheExpiry(),
 	}
 }
 
-func loadCachePrefixes() CachePrefixes {
-	return CachePrefixes{
+func LoadCachePrefixes() *CachePrefixes {
+	return &CachePrefixes{
 		Till:                  envStringOrDefault("TILL_CACHE_PREFIX", "till_cache_data_"),
 		PosAuthUser:           envStringOrDefault("POS_AUTH_USER_CACHE_KEY_PREFIX", "pos_auth_user_cache_"),
 		PosAuthToken:          envStringOrDefault("POS_AUTH_CACHE_KEY", "pos_auth_token_"),
@@ -189,8 +189,8 @@ func loadCachePrefixes() CachePrefixes {
 	}
 }
 
-func loadCacheTags() CacheTags {
-	return CacheTags{
+func LoadCacheTags() *CacheTags {
+	return &CacheTags{
 		Till:             envStringOrDefault("TILL_CACHE_TAGS", "till_cache_tags"),
 		Product:          envStringOrDefault("PRODUCT_CACHE_TAG", "product_cache_tag"),
 		ProductMolecule:  envStringOrDefault("PRODUCT_MOLECULE_CACHE_TAG", "product_molecule_cache_tag"),
@@ -202,7 +202,7 @@ func loadCacheTags() CacheTags {
 	}
 }
 
-func loadCacheExpiry() CacheExpiry {
+func LoadCacheExpiry() CacheExpiry {
 	return CacheExpiry{
 		TillHours:                  envIntOrDefault("TILL_CACHE_EXPIRY", 12),
 		PosAuthHours:               envIntOrDefault("POS_AUTH_CACHE_DURATION_HOURS", 12),
