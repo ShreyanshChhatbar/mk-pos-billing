@@ -16,6 +16,7 @@ import (
 var validate = validator.New()
 
 func init() {
+	validate.SetTagName("binding")
 	// Register custom validators
 	// validate.RegisterValidation("escalation_type", validateEscalationType)
 }
