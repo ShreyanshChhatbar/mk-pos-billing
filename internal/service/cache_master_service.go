@@ -10,7 +10,11 @@ import (
 	"go.uber.org/zap"
 )
 
-// Define the interface
+// CacheMaster port from laravel
+//
+// Deprecated: The god class from laravel is now deprecated in favor of using the
+// individual cache interfaces (TillCache, StoreCache, UserCache, etc.) directly from internal/domain/cache.
+// This is a transitional implementation to mimic the Laravel CacheMasterService behavior in Go.
 type CacheMasterService interface {
 	GetTillCache(ctx context.Context, storeID int, dbFallback bool) (*model.TillCache, error)
 	GetUserAuthCache(ctx context.Context, token string) (*model.UserAuthCache, error)
